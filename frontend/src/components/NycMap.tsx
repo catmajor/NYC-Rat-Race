@@ -11,8 +11,31 @@ import { zoneAt, polygonCentroid, type TaxiZone } from '../lib/zones'
 // Tune-by-eye constants (visual calibration happens in the browser):
 export const RAT_SIZE_SCALE = 1500 // rat.glb is ~1 world unit; this makes the rat
 // a ~1.5 km-wide "giant rat taxi" so it is visible at city zoom (~57 m/px at z11.4).
-export const RAT_YAW_OFFSET = 0 // rotate the model to face +heading
 export const RAT_SPEED_MPS = 55 // playful "taxi rat" ground speed
+
+// rat.glb model frame: forward = -x, up = +y (standard glTF/Blender Y-up):
+// nose at negative x, eyes/body elevated along +y, and z is the lateral axis
+// (+z = left eye side). We align it to world space (deck lnglat: +x = east,
+// +y = north, +z = up) via a raw rotation matrix so the nose points along the
+// travel heading. h = compass bearing in degrees (0 = north, 90 = east), so the
+// heading direction is F = (sin h, cos h, 0). A proper rotation with columns
+//   col_x = (-sin h, -cos h, 0)   (maps model -x -> F)
+//   col_y = (0, 0, 1)             (maps model +y -> up)
+//   col_z = (-cos h, sin h, 0)    (= col_x x col_y, maps model +z -> left)
+// is right-handed (col_x x col_y = col_z).
+// getTransformMatrix overrides getOrientation/getScale/getTranslation;
+// sizeScale is still applied by the layer shader.
+const ratModelMatrix = (headingDeg: number): number[] => {
+  const h = (headingDeg * Math.PI) / 180
+  const s = Math.sin(h)
+  const c = Math.cos(h)
+  return [
+    -s, -c, 0, 0,
+    0, 0, 1, 0,
+    -c, s, 0, 0,
+    0, 0, 0, 1,
+  ]
+}
 
 const RAT_URL = '/rat.glb'
 const ROADS_URL = '/data/nyc_roads.geojson'
@@ -127,7 +150,7 @@ export default function NycMap() {
         data: [{ ...pose }],
         scenegraph: RAT_URL,
         getPosition: (d) => [d.lon, d.lat],
-        getOrientation: (d) => [0, d.heading + RAT_YAW_OFFSET, 0],
+        getTransformMatrix: (d) => ratModelMatrix(d.heading),
         sizeScale: RAT_SIZE_SCALE,
         // PBR mode: the flat rendering path outputs `vColor` (instance color,
         // white) and never reads the glTF materials' baseColorFactor, so the rat
@@ -142,8 +165,16 @@ export default function NycMap() {
       last = now
       const router = routerRef.current
       if (router) {
-        const moved = router.step(dt, RAT_SPEED_MPS)
-        poseRef.current = { lon: moved.point.lon, lat: moved.point.lat, heading: moved.headingDeg }
+        // Debug hook: window.__ratOverride pins the rat to a fixed pose so a
+        // headless harness can screenshot a controlled orientation.
+        const override = (window as any).__ratOverride as
+          | { lon: number; lat: number; heading: number }
+          | undefined
+        const pose = override ?? (() => {
+          const moved = router.step(dt, RAT_SPEED_MPS)
+          return { lon: moved.point.lon, lat: moved.point.lat, heading: moved.headingDeg }
+        })()
+        poseRef.current = pose
         ;(window as any).__ratPose = poseRef.current
         // Throttle deck layer updates to ~8fps: recreating the ScenegraphLayer on
         // every frame forces constant GL work for no visible benefit.
