@@ -6,4 +6,5 @@ __pycache__/
 models/*.onnx
 models/*.joblib
 models/*.txt
+models/archive_live/
 data/*.zip

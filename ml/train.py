@@ -30,7 +30,7 @@ MODELS = {"mean": None, **{k: v for k, v in config.QUANTILE_ALPHAS.items()}}
 
 
 def load_dataset() -> pd.DataFrame:
-    return pd.read_parquet(config.ML_ARTIFACTS / "train_dataset.parquet")
+    return pd.read_parquet(config.train_dataset_path())
 
 
 def pinball(y, q, alpha):
@@ -92,8 +92,9 @@ def fit_one(name: str, ds: pd.DataFrame, objective: str, alpha: float | None) ->
     }
     imp["top10"] = sorted(imp["gain"], key=imp["gain"].get, reverse=True)[:10]
 
-    model.booster_.save_model(str(config.MODELS_DIR / f"demand_{name}.txt"))
-    joblib.dump(model, config.MODELS_DIR / f"demand_{name}.joblib")
+    stem = config.model_stem()
+    model.booster_.save_model(str(config.MODELS_DIR / f"{stem}_{name}.txt"))
+    joblib.dump(model, config.MODELS_DIR / f"{stem}_{name}.joblib")
     print(f"[train]   holdout {metrics}", flush=True)
     return {"name": name, "objective": objective, "alpha": alpha, "metrics": metrics, "importance": imp, "best_iter": int(model.best_iteration_)}
 
@@ -103,6 +104,7 @@ def main() -> None:
     print(f"[train] dataset: {len(ds):,} rows | train {int((ds.split=='train').sum()):,} val {int((ds.split=='validation').sum()):,} holdout {int((ds.split=='holdout').sum()):,}")
 
     report: dict = {
+        "variant": config.VARIANT,
         "feature_order": config.FEATURE_ORDER,
         "lgb_params": config.LGB_PARAMS,
         "splits": {"train_cutoff": config.TRAIN_CUTOFF, "val_cutoff": config.VAL_CUTOFF},
@@ -124,8 +126,10 @@ def main() -> None:
         for h in config.HORIZON_HOURS
     }
 
+    # Variant report, plus a canonical copy at the path the backend reads.
+    dump_json(config.model_report_path(), report)
     dump_json(config.MODELS_DIR / "model_report.json", report)
-    print(f"[train] report -> {config.MODELS_DIR / 'model_report.json'}")
+    print(f"[train] report -> {config.model_report_path()}")
 
 
 if __name__ == "__main__":

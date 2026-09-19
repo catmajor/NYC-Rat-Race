@@ -24,6 +24,28 @@ WEB_DIR = REPO_ROOT / "web"             # optional: share artifacts with backend
 ML_ARTIFACTS.mkdir(parents=True, exist_ok=True)
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Active gameplay variant (see the Model section below): determines which
+# feature order is shipped to the backend.
+VARIANT = "delayed"
+
+
+def train_dataset_path(variant: str = VARIANT) -> Path:
+    """Feature dataset for a pipeline variant (kept separate so variants can coexist)."""
+    return ML_ARTIFACTS / f"train_dataset_{variant}.parquet"
+
+
+def model_report_path(variant: str = VARIANT) -> Path:
+    return MODELS_DIR / f"model_report_{variant}.json"
+
+
+def feature_columns_path(variant: str = VARIANT) -> Path:
+    return MODELS_DIR / f"feature_columns_{variant}.json"
+
+
+def model_stem(variant: str = VARIANT) -> str:
+    """File stem for a variant's trained models (e.g. ``demand_delayed``)."""
+    return f"demand_{variant}"
+
 # External reference data (TLC zone lookup + geometry). Cached offline.
 LOOKUP_CSV_URL = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
 ZONES_SHP_ZIP_URL = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zones.zip"
@@ -84,12 +106,23 @@ WEATHER_FILL_MAX_HOURS = 24  # forward-fill limit when a station is offline
 EVENTS_LAG_DAYS = 1
 
 # ---------------------------------------------------------------------------
-# Model
+# Model feature variants
 # ---------------------------------------------------------------------------
-# Feature columns, listed in model-input order. `FEATURE_ORDER` is persisted to
+# Two feature pipelines are kept in the codebase:
+#
+# * ``live``   -- full 29-feature model using live 15-min demand snapshots
+#   (lags back to 2 h, trailing windows, rolling means, neighbour zones).
+#   Used for offline experiments and back-casting only.
+#
+# * ``delayed`` -- the game model (``VARIANT``). Demand is NOT known live:
+#   only day-old information (same-hour yesterday, same hour last week, and
+#   the trailing 24 h total) plus calendar, weather and events. Players bid
+#   without a live taxi feed.
+#
+# ``FEATURE_ORDER`` is the active variant's columns, persisted to
 # models/feature_columns.json and shared with the backend so ONNX input rows
 # can be built in exactly the right order.
-FEATURE_ORDER: list[str] = [
+FEATURE_ORDER_LIVE: list[str] = [
     # time
     "hour",
     "dow",
@@ -127,6 +160,39 @@ FEATURE_ORDER: list[str] = [
     "horizon",
     "zone_id",
 ]
+
+FEATURE_ORDER_DELAYED: list[str] = [
+    # time
+    "hour",
+    "dow",
+    "month",
+    "dayofyear",
+    # day-old demand (no live taxi feed)
+    "same_hour_yday",
+    "same_hour_prevwk",
+    "today_total",
+    # weather at the cutoff
+    "temp_c",
+    "wind_ms",
+    "vis_km",
+    "precip_mm",
+    "precip_3h_mm",
+    # events (lagged one day, citywide)
+    "event_count",
+    "event_mentions",
+    "avg_tone",
+    "avg_goldstein",
+    # multi-horizon + zone identity
+    "horizon",
+    "zone_id",
+]
+
+VARIANTS: dict[str, list[str]] = {
+    "live": FEATURE_ORDER_LIVE,
+    "delayed": FEATURE_ORDER_DELAYED,
+}
+
+FEATURE_ORDER: list[str] = VARIANTS[VARIANT]
 
 # LightGBM hyperparameters shared by all four models.
 LGB_PARAMS: dict = {

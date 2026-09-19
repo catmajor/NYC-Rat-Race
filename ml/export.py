@@ -35,7 +35,7 @@ ONNX_OPSET = 15
 
 
 def features_for_check(n_rows: int = 200_000, seed: int = 7) -> tuple[np.ndarray, np.ndarray]:
-    ds = pd.read_parquet(config.ML_ARTIFACTS / "train_dataset.parquet")
+    ds = pd.read_parquet(config.train_dataset_path())
     ds = ds[ds.split == "holdout"]
     if len(ds) > n_rows:
         ds = ds.sample(n_rows, random_state=seed)
@@ -47,12 +47,15 @@ def features_for_check(n_rows: int = 200_000, seed: int = 7) -> tuple[np.ndarray
 def convert(name: str) -> None:
     from onnxmltools import convert_lightgbm
 
-    model = joblib.load(config.MODELS_DIR / f"demand_{name}.joblib")
+    stem = config.model_stem()
+    model = joblib.load(config.MODELS_DIR / f"{stem}_{name}.joblib")
     onx = convert_lightgbm(
         model,
         initial_types=[("input", FloatTensorType([None, len(config.FEATURE_ORDER)]))],
         target_opset=ONNX_OPSET,
     )
+    # Canonical backend filename; on the active variant this replaces the model
+    # shipped to the game. The older variant's files are archived beforehand.
     out = config.MODELS_DIR / f"demand_{name}.onnx"
     out.write_bytes(onx.SerializeToString())
     return out
@@ -61,7 +64,7 @@ def convert(name: str) -> None:
 def verify(name: str, X: np.ndarray, y: np.ndarray) -> float:
     onx_path = config.MODELS_DIR / f"demand_{name}.onnx"
     sess = ort.InferenceSession(str(onx_path), providers=["CPUExecutionProvider"])
-    native = joblib.load(config.MODELS_DIR / f"demand_{name}.joblib").predict(X)
+    native = joblib.load(config.MODELS_DIR / f"{config.model_stem()}_{name}.joblib").predict(X)
     onx_pred = sess.run(None, {"input": X})[0].ravel()
     diff = np.abs(onx_pred - native)
     mae = float(np.mean(np.abs(onx_pred - y)))
@@ -81,13 +84,15 @@ def emit_backend_artifacts() -> None:
 
     # Numeric zone codes must match the training encoding exactly; read them
     # back from one row per zone in the actual training dataset.
-    ds = pd.read_parquet(config.ML_ARTIFACTS / "train_dataset.parquet")
+    ds = pd.read_parquet(config.train_dataset_path())
     codes_rows = ds.groupby("game_zone", as_index=False).agg(code=("zone_id", "first")).sort_values("code")
     zone_codes = dict(zip(codes_rows.game_zone, codes_rows.code.astype(int)))
 
     codes_rows.to_parquet(config.ML_ARTIFACTS / "zone_codes.parquet", index=False)
 
-    dump_json(config.MODELS_DIR / "feature_columns.json", {"features": list(config.FEATURE_ORDER)})
+    fc = {"variant": config.VARIANT, "features": list(config.FEATURE_ORDER)}
+    dump_json(config.feature_columns_path(), fc)
+    dump_json(config.MODELS_DIR / "feature_columns.json", fc)
     dump_json(
         config.MODELS_DIR / "zone_codes.json",
         {"zones": zone_codes, "display_names": dict(config.GAME_ZONES)},
@@ -100,7 +105,10 @@ def emit_backend_artifacts() -> None:
             "horizons_h": config.HORIZON_HOURS,
         },
     )
-    print("[export] wrote feature_columns.json, zone_codes.json, game_zones.json")
+    print(
+        f"[export] wrote feature_columns.json ({config.VARIANT}, {len(config.FEATURE_ORDER)} features), "
+        "zone_codes.json, game_zones.json"
+    )
 
 
 def main() -> None:
