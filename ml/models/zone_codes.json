@@ -1,0 +1,24 @@
+{
+  "display_names": {
+    "airports": "Airports",
+    "downtown": "Downtown",
+    "harlem": "Harlem",
+    "midtown": "Midtown",
+    "north_brooklyn": "North Brooklyn",
+    "queens_west": "Queens West",
+    "south_brooklyn": "South Brooklyn",
+    "upper_east": "Upper East Side",
+    "upper_west": "Upper West Side"
+  },
+  "zones": {
+    "airports": 0,
+    "downtown": 1,
+    "harlem": 2,
+    "midtown": 3,
+    "north_brooklyn": 4,
+    "queens_west": 5,
+    "south_brooklyn": 6,
+    "upper_east": 7,
+    "upper_west": 8
+  }
+}

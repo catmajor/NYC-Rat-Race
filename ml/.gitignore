@@ -1,0 +1,9 @@
+# Python caches
+__pycache__/
+*.pyc
+
+# Generated artifacts (rebuilt by running the pipeline; not source)
+models/*.onnx
+models/*.joblib
+models/*.txt
+data/*.zip

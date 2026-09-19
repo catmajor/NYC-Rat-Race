@@ -1,0 +1,33 @@
+{
+  "features": [
+    "hour",
+    "dow",
+    "month",
+    "dayofyear",
+    "lag_15m",
+    "lag_30m",
+    "lag_45m",
+    "lag_60m",
+    "lag_75m",
+    "lag_90m",
+    "lag_105m",
+    "lag_120m",
+    "roll_1h",
+    "roll_4h",
+    "trail_3h",
+    "trail_prev_3h",
+    "neighbor_demand_1h",
+    "neighbor_demand_3h",
+    "temp_c",
+    "wind_ms",
+    "vis_km",
+    "precip_mm",
+    "precip_3h_mm",
+    "event_count",
+    "event_mentions",
+    "avg_tone",
+    "avg_goldstein",
+    "horizon",
+    "zone_id"
+  ]
+}

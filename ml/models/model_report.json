@@ -1,0 +1,497 @@
+{
+  "feature_order": [
+    "hour",
+    "dow",
+    "month",
+    "dayofyear",
+    "lag_15m",
+    "lag_30m",
+    "lag_45m",
+    "lag_60m",
+    "lag_75m",
+    "lag_90m",
+    "lag_105m",
+    "lag_120m",
+    "roll_1h",
+    "roll_4h",
+    "trail_3h",
+    "trail_prev_3h",
+    "neighbor_demand_1h",
+    "neighbor_demand_3h",
+    "temp_c",
+    "wind_ms",
+    "vis_km",
+    "precip_mm",
+    "precip_3h_mm",
+    "event_count",
+    "event_mentions",
+    "avg_tone",
+    "avg_goldstein",
+    "horizon",
+    "zone_id"
+  ],
+  "game_zones": {
+    "airports": "Airports",
+    "downtown": "Downtown",
+    "harlem": "Harlem",
+    "midtown": "Midtown",
+    "north_brooklyn": "North Brooklyn",
+    "queens_west": "Queens West",
+    "south_brooklyn": "South Brooklyn",
+    "upper_east": "Upper East Side",
+    "upper_west": "Upper West Side"
+  },
+  "holdout_target_stats": {
+    "1": {
+      "mean": 4402.351147342995,
+      "std": 2666.9786291495802
+    },
+    "2": {
+      "mean": 4581.975543478261,
+      "std": 2848.5931022775803
+    },
+    "3": {
+      "mean": 4569.485205314009,
+      "std": 2886.975147772902
+    }
+  },
+  "lgb_params": {
+    "colsample_bytree": 0.8,
+    "learning_rate": 0.05,
+    "min_child_samples": 30,
+    "n_estimators": 800,
+    "n_jobs": -1,
+    "num_leaves": 63,
+    "objective": "regression",
+    "random_state": 42,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "subsample": 0.8,
+    "subsample_freq": 1,
+    "verbose": -1
+  },
+  "models": {
+    "mean": {
+      "alpha": null,
+      "best_iter": 730,
+      "importance": {
+        "gain": {
+          "avg_goldstein": 3165117418.0,
+          "avg_tone": 2578603059.0,
+          "dayofyear": 7470039448.0,
+          "dow": 37456104735.8984,
+          "event_count": 6363742435.2031,
+          "event_mentions": 5111061682.0,
+          "horizon": 62094608516.0,
+          "hour": 114376425413.0,
+          "lag_105m": 3657399911.0,
+          "lag_120m": 6479085131.0,
+          "lag_15m": 953597493999.0,
+          "lag_30m": 52744628625.0,
+          "lag_45m": 271557050445.0,
+          "lag_60m": 8274238907.0,
+          "lag_75m": 7139125713.0,
+          "lag_90m": 4098360389.0,
+          "month": 780978713.0,
+          "neighbor_demand_1h": 32870350428.0,
+          "neighbor_demand_3h": 22740921524.0,
+          "precip_3h_mm": 1686907766.0,
+          "precip_mm": 1560834073.0,
+          "roll_1h": 2989745279620.0,
+          "roll_4h": 5696966781.0,
+          "temp_c": 7695730486.0,
+          "trail_3h": 2386560801.0,
+          "trail_prev_3h": 33226093495.0,
+          "vis_km": 741224637.0,
+          "wind_ms": 2564333501.0,
+          "zone_id": 41682081394.0
+        },
+        "split": {
+          "avg_goldstein": 1844,
+          "avg_tone": 1770,
+          "dayofyear": 2445,
+          "dow": 1500,
+          "event_count": 1749,
+          "event_mentions": 1622,
+          "horizon": 2774,
+          "hour": 1567,
+          "lag_105m": 1035,
+          "lag_120m": 1265,
+          "lag_15m": 2888,
+          "lag_30m": 1518,
+          "lag_45m": 1119,
+          "lag_60m": 1089,
+          "lag_75m": 1160,
+          "lag_90m": 1120,
+          "month": 448,
+          "neighbor_demand_1h": 2410,
+          "neighbor_demand_3h": 2239,
+          "precip_3h_mm": 1067,
+          "precip_mm": 980,
+          "roll_1h": 991,
+          "roll_4h": 1004,
+          "temp_c": 2879,
+          "trail_3h": 637,
+          "trail_prev_3h": 2796,
+          "vis_km": 500,
+          "wind_ms": 1602,
+          "zone_id": 1242
+        },
+        "top10": [
+          "roll_1h",
+          "lag_15m",
+          "lag_45m",
+          "hour",
+          "horizon",
+          "lag_30m",
+          "zone_id",
+          "dow",
+          "trail_prev_3h",
+          "neighbor_demand_1h"
+        ]
+      },
+      "metrics": {
+        "by_horizon": {
+          "1": {
+            "mae": 182.66165953768316,
+            "n": 3312,
+            "rmse": 269.65988936860407
+          },
+          "2": {
+            "mae": 253.47753233622765,
+            "n": 3312,
+            "rmse": 389.78522509215685
+          },
+          "3": {
+            "mae": 305.3252807080597,
+            "n": 3312,
+            "rmse": 475.89425125957166
+          }
+        },
+        "mae": 247.15482419399015,
+        "rmse": 387.7818613672467
+      },
+      "name": "mean",
+      "objective": "regression"
+    },
+    "p10": {
+      "alpha": 0.1,
+      "best_iter": 760,
+      "importance": {
+        "gain": {
+          "avg_goldstein": 1877.3963,
+          "avg_tone": 1726.3228,
+          "dayofyear": 3807.5886,
+          "dow": 4008.8013,
+          "event_count": 2146.5669,
+          "event_mentions": 1946.1826,
+          "horizon": 6817.8648,
+          "hour": 4058.4716,
+          "lag_105m": 1564.3675,
+          "lag_120m": 2062.7758,
+          "lag_15m": 40700.5733,
+          "lag_30m": 10016.3603,
+          "lag_45m": 1931.897,
+          "lag_60m": 1534.2334,
+          "lag_75m": 1818.3337,
+          "lag_90m": 1544.7769,
+          "month": 611.668,
+          "neighbor_demand_1h": 4148.8769,
+          "neighbor_demand_3h": 4657.4655,
+          "precip_3h_mm": 1229.2926,
+          "precip_mm": 934.4277,
+          "roll_1h": 6523.9117,
+          "roll_4h": 2151.0909,
+          "temp_c": 3463.2532,
+          "trail_3h": 1525.9321,
+          "trail_prev_3h": 6693.3576,
+          "vis_km": 809.1693,
+          "wind_ms": 2131.5803,
+          "zone_id": 8150.3455
+        },
+        "split": {
+          "avg_goldstein": 1861,
+          "avg_tone": 1722,
+          "dayofyear": 2690,
+          "dow": 1588,
+          "event_count": 1769,
+          "event_mentions": 1596,
+          "horizon": 2168,
+          "hour": 1243,
+          "lag_105m": 1271,
+          "lag_120m": 1436,
+          "lag_15m": 2577,
+          "lag_30m": 1567,
+          "lag_45m": 1308,
+          "lag_60m": 1211,
+          "lag_75m": 1295,
+          "lag_90m": 1187,
+          "month": 453,
+          "neighbor_demand_1h": 2663,
+          "neighbor_demand_3h": 2591,
+          "precip_3h_mm": 1130,
+          "precip_mm": 828,
+          "roll_1h": 1028,
+          "roll_4h": 1105,
+          "temp_c": 2751,
+          "trail_3h": 790,
+          "trail_prev_3h": 3142,
+          "vis_km": 734,
+          "wind_ms": 1961,
+          "zone_id": 1455
+        },
+        "top10": [
+          "lag_15m",
+          "lag_30m",
+          "zone_id",
+          "horizon",
+          "trail_prev_3h",
+          "roll_1h",
+          "neighbor_demand_3h",
+          "neighbor_demand_1h",
+          "hour",
+          "dow"
+        ]
+      },
+      "metrics": {
+        "by_horizon": {
+          "1": {
+            "mae": 258.51709358160673,
+            "n": 3312,
+            "rmse": 367.6804949747815
+          },
+          "2": {
+            "mae": 390.9489702739267,
+            "n": 3312,
+            "rmse": 585.8368596506987
+          },
+          "3": {
+            "mae": 499.6642252836027,
+            "n": 3312,
+            "rmse": 793.8171986561254
+          }
+        },
+        "coverage": 0.1806561996779388,
+        "mae": 383.0434297130454,
+        "pinball": 61.30114482815775,
+        "rmse": 607.8759515428981
+      },
+      "name": "p10",
+      "objective": "quantile"
+    },
+    "p50": {
+      "alpha": 0.5,
+      "best_iter": 793,
+      "importance": {
+        "gain": {
+          "avg_goldstein": 4678.1208,
+          "avg_tone": 4216.3048,
+          "dayofyear": 9731.5509,
+          "dow": 12533.3831,
+          "event_count": 5701.6682,
+          "event_mentions": 4840.0413,
+          "horizon": 27016.7858,
+          "hour": 18328.5413,
+          "lag_105m": 4299.8958,
+          "lag_120m": 6684.3129,
+          "lag_15m": 167781.152,
+          "lag_30m": 24873.2538,
+          "lag_45m": 4809.3963,
+          "lag_60m": 5358.4247,
+          "lag_75m": 5779.9494,
+          "lag_90m": 4661.4069,
+          "month": 1432.7992,
+          "neighbor_demand_1h": 11709.5353,
+          "neighbor_demand_3h": 13634.8709,
+          "precip_3h_mm": 3021.9322,
+          "precip_mm": 2447.5462,
+          "roll_1h": 76465.9828,
+          "roll_4h": 6893.4886,
+          "temp_c": 10425.8745,
+          "trail_3h": 3682.3224,
+          "trail_prev_3h": 22652.497,
+          "vis_km": 2035.0683,
+          "wind_ms": 5153.5361,
+          "zone_id": 14880.2569
+        },
+        "split": {
+          "avg_goldstein": 1913,
+          "avg_tone": 1749,
+          "dayofyear": 2659,
+          "dow": 1465,
+          "event_count": 1797,
+          "event_mentions": 1626,
+          "horizon": 2388,
+          "hour": 1338,
+          "lag_105m": 1300,
+          "lag_120m": 1453,
+          "lag_15m": 2804,
+          "lag_30m": 1640,
+          "lag_45m": 1405,
+          "lag_60m": 1297,
+          "lag_75m": 1354,
+          "lag_90m": 1283,
+          "month": 476,
+          "neighbor_demand_1h": 2745,
+          "neighbor_demand_3h": 2585,
+          "precip_3h_mm": 1158,
+          "precip_mm": 949,
+          "roll_1h": 1212,
+          "roll_4h": 1233,
+          "temp_c": 2960,
+          "trail_3h": 858,
+          "trail_prev_3h": 3184,
+          "vis_km": 735,
+          "wind_ms": 2107,
+          "zone_id": 1493
+        },
+        "top10": [
+          "lag_15m",
+          "roll_1h",
+          "horizon",
+          "lag_30m",
+          "trail_prev_3h",
+          "hour",
+          "zone_id",
+          "neighbor_demand_3h",
+          "dow",
+          "neighbor_demand_1h"
+        ]
+      },
+      "metrics": {
+        "by_horizon": {
+          "1": {
+            "mae": 178.5957718719543,
+            "n": 3312,
+            "rmse": 269.6177554147792
+          },
+          "2": {
+            "mae": 256.87069922225925,
+            "n": 3312,
+            "rmse": 401.0909647653209
+          },
+          "3": {
+            "mae": 311.6116876745535,
+            "n": 3312,
+            "rmse": 495.80208290094134
+          }
+        },
+        "coverage": 0.5078502415458938,
+        "mae": 249.02605292292233,
+        "pinball": 124.51302646146117,
+        "rmse": 399.7446691160878
+      },
+      "name": "p50",
+      "objective": "quantile"
+    },
+    "p90": {
+      "alpha": 0.9,
+      "best_iter": 450,
+      "importance": {
+        "gain": {
+          "avg_goldstein": 1419.3662,
+          "avg_tone": 1316.2639,
+          "dayofyear": 2580.9067,
+          "dow": 2703.663,
+          "event_count": 1721.1656,
+          "event_mentions": 1515.4159,
+          "horizon": 5077.6559,
+          "hour": 3947.0102,
+          "lag_105m": 1114.2302,
+          "lag_120m": 1563.6384,
+          "lag_15m": 47306.2653,
+          "lag_30m": 14323.4461,
+          "lag_45m": 839.036,
+          "lag_60m": 1077.498,
+          "lag_75m": 1012.278,
+          "lag_90m": 1009.079,
+          "month": 391.7101,
+          "neighbor_demand_1h": 2344.4778,
+          "neighbor_demand_3h": 2704.6441,
+          "precip_3h_mm": 690.5058,
+          "precip_mm": 701.4091,
+          "roll_1h": 3547.6672,
+          "roll_4h": 1325.8744,
+          "temp_c": 2885.0724,
+          "trail_3h": 663.0581,
+          "trail_prev_3h": 3958.9684,
+          "vis_km": 445.4559,
+          "wind_ms": 1410.015,
+          "zone_id": 2302.7667
+        },
+        "split": {
+          "avg_goldstein": 1105,
+          "avg_tone": 1031,
+          "dayofyear": 1568,
+          "dow": 880,
+          "event_count": 1128,
+          "event_mentions": 1052,
+          "horizon": 1517,
+          "hour": 894,
+          "lag_105m": 647,
+          "lag_120m": 817,
+          "lag_15m": 1660,
+          "lag_30m": 882,
+          "lag_45m": 591,
+          "lag_60m": 610,
+          "lag_75m": 678,
+          "lag_90m": 646,
+          "month": 237,
+          "neighbor_demand_1h": 1376,
+          "neighbor_demand_3h": 1543,
+          "precip_3h_mm": 540,
+          "precip_mm": 526,
+          "roll_1h": 589,
+          "roll_4h": 703,
+          "temp_c": 1793,
+          "trail_3h": 435,
+          "trail_prev_3h": 2002,
+          "vis_km": 395,
+          "wind_ms": 1091,
+          "zone_id": 963
+        },
+        "top10": [
+          "lag_15m",
+          "lag_30m",
+          "horizon",
+          "trail_prev_3h",
+          "hour",
+          "roll_1h",
+          "temp_c",
+          "neighbor_demand_3h",
+          "dow",
+          "dayofyear"
+        ]
+      },
+      "metrics": {
+        "by_horizon": {
+          "1": {
+            "mae": 294.48201305484446,
+            "n": 3312,
+            "rmse": 398.93757699190706
+          },
+          "2": {
+            "mae": 421.1150266603529,
+            "n": 3312,
+            "rmse": 597.8445209131407
+          },
+          "3": {
+            "mae": 494.98550049803634,
+            "n": 3312,
+            "rmse": 716.8157990645792
+          }
+        },
+        "coverage": 0.8502415458937198,
+        "mae": 403.52751340441125,
+        "pinball": 68.90762960056684,
+        "rmse": 586.0586294079651
+      },
+      "name": "p90",
+      "objective": "quantile"
+    }
+  },
+  "splits": {
+    "train_cutoff": "2019-09-01",
+    "val_cutoff": "2019-10-01"
+  }
+}
