@@ -3,15 +3,19 @@ import { Map as MapLibreMap, NavigationControl, type StyleSpecification } from '
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapboxOverlay } from '@deck.gl/mapbox'
 import { LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core'
-import { GeoJsonLayer, TextLayer } from '@deck.gl/layers'
+import { GeoJsonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers'
 import { ScenegraphLayer } from '@deck.gl/mesh-layers'
 import { RatRouter } from '../lib/ratRouter'
 import { zoneAt, polygonCentroid, type TaxiZone } from '../lib/zones'
 
 // Tune-by-eye constants (visual calibration happens in the browser):
-export const RAT_SIZE_SCALE = 1500 // rat.glb is ~1 world unit; this makes the rat
+export const RAT_SIZE_SCALE = 50// rat.glb is ~1 world unit; this makes the rat
 // a ~1.5 km-wide "giant rat taxi" so it is visible at city zoom (~57 m/px at z11.4).
 export const RAT_SPEED_MPS = 55 // playful "taxi rat" ground speed
+
+// Footstep-trail feel: dots dropped at the rat's position that fade away.
+export const FOOTSTEP_DROP_MS = 250 // interval between new dots
+export const FOOTSTEP_LIFETIME_MS = 4500 // how long each dot lingers before fading out
 
 // rat.glb model frame: forward = -x, up = +y (standard glTF/Blender Y-up):
 // nose at negative x, eyes/body elevated along +y, and z is the lateral axis
@@ -80,6 +84,7 @@ export default function NycMap() {
   const zonesLayerRef = useRef<GeoJsonLayer | null>(null)
   const labelsLayerRef = useRef<TextLayer<any> | null>(null)
   const poseRef = useRef<RatPose>({ lon: -73.985, lat: 40.755, heading: 0 })
+  const footstepsRef = useRef<Array<{ lon: number; lat: number; born: number }>>([])
 
   const [status, setStatus] = useState<string>('loading map…')
   const [inZone, setInZone] = useState<string>('')
@@ -142,6 +147,7 @@ export default function NycMap() {
     let rafId = 0
     let last = performance.now()
     let lastProps = 0
+    let lastDrop = 0
     let disposed = false
 
     const makeRatLayer = (pose: RatPose): ScenegraphLayer => {
@@ -157,6 +163,35 @@ export default function NycMap() {
         // renders as a flat white silhouette. PBR mode routes through
         // pbr_filterColor which applies per-material baseColorFactor + lighting.
         _lighting: 'pbr',
+      })
+    }
+
+    const makeFootstepsLayer = (): ScatterplotLayer => {
+      const now = performance.now()
+      // Keep only live dots, fading alpha + radius with age. The layer is
+      // recreated every ~125ms in tick, so the fade advances smoothly.
+      const data = footstepsRef.current
+        .filter((f) => now - f.born < FOOTSTEP_LIFETIME_MS)
+        .map((f) => {
+          // t = 1 fresh -> 0 gone. sqrt(t) keeps dots large/visible for most of
+          // their life, then shrinks/fades them quickly near the tail.
+          const life = (now - f.born) / FOOTSTEP_LIFETIME_MS
+          const t = 1 - life
+          const hold = Math.sqrt(Math.max(t, 0))
+          return {
+            position: [f.lon, f.lat] as [number, number],
+            radius: Math.round(RAT_SIZE_SCALE * 0.5 * hold),
+            color: [70, 64, 58, Math.round(200 * hold)] as [number, number, number, number],
+          }
+        })
+      return new ScatterplotLayer({
+        id: 'footsteps',
+        data,
+        getPosition: (d) => d.position,
+        getRadius: (d) => d.radius,
+        radiusUnits: 'meters',
+        getFillColor: (d) => d.color,
+        stroked: false,
       })
     }
 
@@ -180,7 +215,13 @@ export default function NycMap() {
         // every frame forces constant GL work for no visible benefit.
         if (now - lastProps > 125) {
           lastProps = now
-          overlay.setProps({ layers: [makeRatLayer(poseRef.current), zonesLayerRef.current, labelsLayerRef.current] })
+          if (now - lastDrop >= FOOTSTEP_DROP_MS) {
+            lastDrop = now
+            footstepsRef.current.push({ ...pose, born: now })
+          }
+          overlay.setProps({
+            layers: [makeRatLayer(poseRef.current), makeFootstepsLayer(), zonesLayerRef.current, labelsLayerRef.current],
+          })
         }
       }
       rafId = requestAnimationFrame(tick)
@@ -256,7 +297,9 @@ export default function NycMap() {
         const p = router.position
         poseRef.current = { lon: p.lon, lat: p.lat, heading: 0 }
         setStatus(`roaming ${router.nodeCount.toLocaleString()} road nodes`)
-        overlay.setProps({ layers: [makeRatLayer(poseRef.current), zonesLayerRef.current, labelsLayerRef.current] })
+        overlay.setProps({
+          layers: [makeRatLayer(poseRef.current), makeFootstepsLayer(), zonesLayerRef.current, labelsLayerRef.current],
+        })
         rafId = requestAnimationFrame(tick)
       } catch (err) {
         console.error(err)
