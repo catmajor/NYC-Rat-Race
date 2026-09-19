@@ -1,591 +1,355 @@
-import io
-import zipfile
-import requests
-import pandas as pd
+import time
 from pathlib import Path
-from urllib.parse import urlparse
+from datetime import date
+
+from google.cloud import bigquery
+import pandas as pd
+
 
 # ============================================================
 # CONFIG
 # ============================================================
 
 START_YEAR = 2015
-END_YEAR = 2026
+START_MONTH = 2
 
-# Broad NYC metro-area bounding box
+END_YEAR = 2026
+END_MONTH = 9
+
 LAT_MIN, LAT_MAX = 40.45, 41.05
 LON_MIN, LON_MAX = -74.30, -73.55
 
-BASE_OUT = Path("gdelt_nyc")
+PROJECT_ID = "YOUR-GOOGLE-CLOUD-PROJECT-ID"
 
-EVENTS_OUT = BASE_OUT / "events"
-MENTIONS_OUT = BASE_OUT / "mentions"
-GKG_OUT = BASE_OUT / "gkg"
+OUT = Path("gdelt_nyc")
+EVENTS_OUT = OUT / "events"
 
-for p in [EVENTS_OUT, MENTIONS_OUT, GKG_OUT]:
-    p.mkdir(parents=True, exist_ok=True)
+EVENTS_OUT.mkdir(
+    parents=True,
+    exist_ok=True,
+)
 
-MASTER_URL = "http://data.gdeltproject.org/gdeltv2/masterfilelist.txt"
-
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "NYC-Rat-Race/1.0"
-})
+MAX_RETRIES = 5
 
 
 # ============================================================
-# COLUMN DEFINITIONS
+# BIGQUERY
 # ============================================================
 
-EVENT_COLUMNS = [
-    "GLOBALEVENTID",
-    "SQLDATE",
-    "MonthYear",
-    "Year",
-    "FractionDate",
-
-    "Actor1Code",
-    "Actor1Name",
-    "Actor1CountryCode",
-    "Actor1KnownGroupCode",
-    "Actor1EthnicCode",
-    "Actor1Religion1Code",
-    "Actor1Religion2Code",
-    "Actor1Type1Code",
-    "Actor1Type2Code",
-    "Actor1Type3Code",
-
-    "Actor2Code",
-    "Actor2Name",
-    "Actor2CountryCode",
-    "Actor2KnownGroupCode",
-    "Actor2EthnicCode",
-    "Actor2Religion1Code",
-    "Actor2Religion2Code",
-    "Actor2Type1Code",
-    "Actor2Type2Code",
-    "Actor2Type3Code",
-
-    "IsRootEvent",
-
-    "EventCode",
-    "EventBaseCode",
-    "EventRootCode",
-    "QuadClass",
-    "GoldsteinScale",
-
-    "NumMentions",
-    "NumSources",
-    "NumArticles",
-    "AvgTone",
-
-    "Actor1Geo_Type",
-    "Actor1Geo_FullName",
-    "Actor1Geo_CountryCode",
-    "Actor1Geo_ADM1Code",
-    "Actor1Geo_Lat",
-    "Actor1Geo_Long",
-    "Actor1Geo_FeatureID",
-
-    "Actor2Geo_Type",
-    "Actor2Geo_FullName",
-    "Actor2Geo_CountryCode",
-    "Actor2Geo_ADM1Code",
-    "Actor2Geo_Lat",
-    "Actor2Geo_Long",
-    "Actor2Geo_FeatureID",
-
-    "ActionGeo_Type",
-    "ActionGeo_FullName",
-    "ActionGeo_CountryCode",
-    "ActionGeo_ADM1Code",
-    "ActionGeo_Lat",
-    "ActionGeo_Long",
-    "ActionGeo_FeatureID",
-
-    "DATEADDED",
-    "SOURCEURL",
-]
-
-
-MENTION_COLUMNS = [
-    "GLOBALEVENTID",
-    "EventTimeDate",
-    "MentionTimeDate",
-    "MentionType",
-    "MentionSourceName",
-    "MentionIdentifier",
-    "SentenceID",
-    "Actor1CharOffset",
-    "Actor2CharOffset",
-    "ActionCharOffset",
-    "InRawText",
-    "Confidence",
-    "MentionDocLen",
-    "MentionDocTone",
-    "MentionDocTranslationInfo",
-    "Extras",
-]
-
-
-GKG_COLUMNS = [
-    "GKGRECORDID",
-    "V2DATE",
-    "V2SOURCECOLLECTIONIDENTIFIER",
-    "V2SOURCECOMMONNAME",
-    "V2DOCUMENTIDENTIFIER",
-    "V1COUNTS",
-    "V2COUNTS",
-    "V1THEMES",
-    "V2ENHANCEDTHEMES",
-    "V1LOCATIONS",
-    "V2ENHANCEDLOCATIONS",
-    "V1PERSONS",
-    "V2ENHANCEDPERSONS",
-    "V1ORGANIZATIONS",
-    "V2ENHANCEDORGANIZATIONS",
-    "V1TONE",
-    "V2ENHANCEDDATES",
-    "V2GCAM",
-    "V2SHARINGIMAGE",
-    "V2RELATEDIMAGES",
-    "V2SOCIALIMAGEEMBEDS",
-    "V2SOCIALVIDEOEMBEDS",
-    "V2QUOTATIONS",
-    "V2ALLNAMES",
-    "V2AMOUNTS",
-    "V2TRANSLATIONINFO",
-    "V2EXTRASXML",
-]
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-
-def year_from_filename(url):
-    """
-    Extract YYYY from filenames like:
-    20150219150000.export.CSV.zip
-    """
-    filename = Path(urlparse(url).path).name
-
-    try:
-        return int(filename[:4])
-    except ValueError:
-        return None
-
-
-def download_zip_dataframe(url, columns):
-    """
-    Downloads one GDELT ZIP into memory, opens the TSV,
-    and returns a dataframe.
-
-    Nothing is permanently written to disk.
-    """
-
-    r = session.get(url, timeout=180)
-    r.raise_for_status()
-
-    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-        names = z.namelist()
-
-        if not names:
-            return None
-
-        with z.open(names[0]) as f:
-            return pd.read_csv(
-                f,
-                sep="\t",
-                names=columns,
-                header=None,
-                dtype=str,
-                low_memory=False,
-                on_bad_lines="skip",
-            )
-
-
-def save_append(df, path):
-    """
-    Append data to one CSV file.
-
-    This means you don't end up with tens of thousands
-    of tiny files.
-    """
-
-    if df.empty:
-        return
-
-    exists = path.exists()
-
-    df.to_csv(
-        path,
-        mode="a",
-        header=not exists,
-        index=False,
-    )
-
-
-# ============================================================
-# GET MASTER FILE LIST
-# ============================================================
-
-print("Downloading GDELT master file list...")
-
-r = session.get(MASTER_URL, timeout=60)
-r.raise_for_status()
-
-event_files = []
-mention_files = []
-gkg_files = []
-
-for line in r.text.splitlines():
-
-    parts = line.split()
-
-    if len(parts) < 3:
-        continue
-
-    url = parts[-1]
-
-    year = year_from_filename(url)
-
-    if year is None:
-        continue
-
-    if not START_YEAR <= year <= END_YEAR:
-        continue
-
-    if url.endswith(".export.CSV.zip"):
-        event_files.append(url)
-
-    elif url.endswith(".mentions.CSV.zip"):
-        mention_files.append(url)
-
-    elif url.endswith(".gkg.csv.zip"):
-        gkg_files.append(url)
-
-
-print(f"Events files:   {len(event_files):,}")
-print(f"Mentions files: {len(mention_files):,}")
-print(f"GKG files:      {len(gkg_files):,}")
-
-
-# ============================================================
-# PROCESS EVENTS
-# ============================================================
-
-print("\n========================================")
-print("PROCESSING EVENTS")
-print("========================================")
-
-nyc_event_ids = set()
-
-for i, url in enumerate(event_files, 1):
-
-    filename = Path(urlparse(url).path).name
-
-    print(
-        f"[Events {i:,}/{len(event_files):,}] "
-        f"{filename}"
-    )
-
-    try:
-
-        df = download_zip_dataframe(
-            url,
-            EVENT_COLUMNS,
-        )
-
-        if df is None or df.empty:
-            continue
-
-        # Convert geo fields
-        df["ActionGeo_Lat"] = pd.to_numeric(
-            df["ActionGeo_Lat"],
-            errors="coerce"
-        )
-
-        df["ActionGeo_Long"] = pd.to_numeric(
-            df["ActionGeo_Long"],
-            errors="coerce"
-        )
-
-        # NYC geographic filter
-        mask = (
-            df["ActionGeo_Lat"].between(
-                LAT_MIN,
-                LAT_MAX
-            )
-            &
-            df["ActionGeo_Long"].between(
-                LON_MIN,
-                LON_MAX
-            )
-        )
-
-        nyc = df.loc[mask].copy()
-
-        if nyc.empty:
-            continue
-
-        # Save event IDs so Mentions can be matched later
-        nyc_event_ids.update(
-            nyc["GLOBALEVENTID"]
-            .dropna()
-            .astype(str)
-        )
-
-        keep = [
-            "GLOBALEVENTID",
-            "SQLDATE",
-            "Year",
-
-            "Actor1Code",
-            "Actor1Name",
-            "Actor1CountryCode",
-
-            "Actor2Code",
-            "Actor2Name",
-            "Actor2CountryCode",
-
-            "IsRootEvent",
-
-            "EventCode",
-            "EventBaseCode",
-            "EventRootCode",
-            "QuadClass",
-
-            "GoldsteinScale",
-
-            "NumMentions",
-            "NumSources",
-            "NumArticles",
-            "AvgTone",
-
-            "ActionGeo_FullName",
-            "ActionGeo_CountryCode",
-            "ActionGeo_ADM1Code",
-            "ActionGeo_Lat",
-            "ActionGeo_Long",
-
-            "DATEADDED",
-            "SOURCEURL",
-        ]
-
-        nyc = nyc[keep]
-
-        year = year_from_filename(url)
-
-        save_append(
-            nyc,
-            EVENTS_OUT / f"gdelt_events_nyc_{year}.csv"
-        )
-
-        print(
-            f"    kept {len(nyc):,} NYC events"
-        )
-
-    except Exception as e:
-        print(f"    ERROR: {e}")
-
-
-print(
-    f"\nUnique NYC event IDs: "
-    f"{len(nyc_event_ids):,}"
+client = bigquery.Client(
+    project=PROJECT_ID
 )
 
 
 # ============================================================
-# PROCESS MENTIONS
+# DATE HELPERS
 # ============================================================
 
-print("\n========================================")
-print("PROCESSING MENTIONS")
-print("========================================")
+def next_month(year, month):
 
-for i, url in enumerate(mention_files, 1):
+    if month == 12:
+        return year + 1, 1
 
-    filename = Path(urlparse(url).path).name
+    return year, month + 1
 
-    print(
-        f"[Mentions {i:,}/{len(mention_files):,}] "
-        f"{filename}"
+
+def month_ranges(
+    start_year,
+    start_month,
+    end_year,
+    end_month,
+):
+
+    year = start_year
+    month = start_month
+
+    while (year, month) <= (
+        end_year,
+        end_month,
+    ):
+
+        ny, nm = next_month(
+            year,
+            month,
+        )
+
+        start = date(
+            year,
+            month,
+            1,
+        )
+
+        end = date(
+            ny,
+            nm,
+            1,
+        )
+
+        yield (
+            year,
+            month,
+            start.isoformat(),
+            end.isoformat(),
+        )
+
+        year, month = ny, nm
+
+
+# ============================================================
+# QUERY ONE MONTH
+# ============================================================
+
+def download_month(
+    year,
+    month,
+    start_date,
+    end_date,
+):
+
+    output = (
+        EVENTS_OUT /
+        f"gdelt_events_nyc_{year}_{month:02d}.parquet"
     )
 
-    try:
+    temp = output.with_suffix(
+        ".parquet.part"
+    )
 
-        df = download_zip_dataframe(
-            url,
-            MENTION_COLUMNS,
-        )
+    # -------------------------------
+    # Already completed
+    # -------------------------------
 
-        if df is None or df.empty:
-            continue
-
-        # Only mentions belonging to NYC events
-        nyc = df[
-            df["GLOBALEVENTID"]
-            .astype(str)
-            .isin(nyc_event_ids)
-        ].copy()
-
-        if nyc.empty:
-            continue
-
-        keep = [
-            "GLOBALEVENTID",
-            "EventTimeDate",
-            "MentionTimeDate",
-
-            "MentionType",
-            "MentionSourceName",
-            "MentionIdentifier",
-
-            "SentenceID",
-            "Confidence",
-
-            "MentionDocLen",
-            "MentionDocTone",
-
-            "MentionDocTranslationInfo",
-        ]
-
-        nyc = nyc[keep]
-
-        year = year_from_filename(url)
-
-        save_append(
-            nyc,
-            MENTIONS_OUT / f"gdelt_mentions_nyc_{year}.csv"
-        )
+    if output.exists():
 
         print(
-            f"    kept {len(nyc):,} mentions"
+            f"SKIP {year}-{month:02d}: "
+            f"already downloaded"
         )
 
-    except Exception as e:
-        print(f"    ERROR: {e}")
+        return True
 
+    # -------------------------------
+    # Remove incomplete prior attempt
+    # -------------------------------
 
-# ============================================================
-# PROCESS GKG
-# ============================================================
+    if temp.exists():
 
-print("\n========================================")
-print("PROCESSING GKG")
-print("========================================")
-
-# Text patterns indicating NYC.
-#
-# GKG locations use structured semicolon/hash-separated
-# strings, so broad matching works well enough here.
-NYC_TERMS = [
-    "New York, New York",
-    "New York City",
-    "Manhattan",
-    "Brooklyn",
-    "Queens",
-    "Bronx",
-    "Staten Island",
-]
-
-
-for i, url in enumerate(gkg_files, 1):
-
-    filename = Path(urlparse(url).path).name
-
-    print(
-        f"[GKG {i:,}/{len(gkg_files):,}] "
-        f"{filename}"
-    )
-
-    try:
-
-        df = download_zip_dataframe(
-            url,
-            GKG_COLUMNS,
+        print(
+            f"Removing incomplete "
+            f"{temp.name}"
         )
 
-        if df is None or df.empty:
-            continue
+        temp.unlink()
 
-        locations = (
-            df["V2ENHANCEDLOCATIONS"]
-            .fillna("")
-            .astype(str)
-        )
+    sql = f"""
+    SELECT
+        GLOBALEVENTID,
+        SQLDATE,
 
-        mask = pd.Series(
-            False,
-            index=df.index
-        )
+        Actor1Code,
+        Actor1Name,
+        Actor1CountryCode,
 
-        for term in NYC_TERMS:
-            mask |= locations.str.contains(
-                term,
-                case=False,
-                regex=False,
+        Actor2Code,
+        Actor2Name,
+        Actor2CountryCode,
+
+        IsRootEvent,
+
+        EventCode,
+        EventBaseCode,
+        EventRootCode,
+
+        QuadClass,
+        GoldsteinScale,
+
+        NumMentions,
+        NumSources,
+        NumArticles,
+        AvgTone,
+
+        ActionGeo_FullName,
+        ActionGeo_CountryCode,
+        ActionGeo_ADM1Code,
+        ActionGeo_Lat,
+        ActionGeo_Long,
+
+        DATEADDED,
+        SOURCEURL
+
+    FROM `gdelt-bq.gdeltv2.events_partitioned`
+
+    WHERE
+        _PARTITIONTIME >= TIMESTAMP("{start_date}")
+        AND _PARTITIONTIME < TIMESTAMP("{end_date}")
+
+        AND ActionGeo_Lat BETWEEN
+            {LAT_MIN} AND {LAT_MAX}
+
+        AND ActionGeo_Long BETWEEN
+            {LON_MIN} AND {LON_MAX}
+    """
+
+    # -------------------------------
+    # Retry
+    # -------------------------------
+
+    for attempt in range(
+        1,
+        MAX_RETRIES + 1,
+    ):
+
+        try:
+
+            print(
+                f"Querying "
+                f"{year}-{month:02d}..."
             )
 
-        nyc = df.loc[mask].copy()
+            query_job = client.query(sql)
 
-        if nyc.empty:
-            continue
+            df = (
+                query_job
+                .result()
+                .to_dataframe(
+                    create_bqstorage_client=True
+                )
+            )
 
-        keep = [
-            "GKGRECORDID",
-            "V2DATE",
+            print(
+                f"    {len(df):,} NYC events"
+            )
 
-            "V2SOURCECOLLECTIONIDENTIFIER",
-            "V2SOURCECOMMONNAME",
-            "V2DOCUMENTIDENTIFIER",
+            # Save to temporary file first
+            df.to_parquet(
+                temp,
+                index=False,
+                compression="zstd",
+            )
 
-            "V1COUNTS",
-            "V2COUNTS",
+            # Only mark complete once write succeeds
+            temp.replace(output)
 
-            "V1THEMES",
-            "V2ENHANCEDTHEMES",
+            size_mb = (
+                output.stat().st_size
+                / 1024
+                / 1024
+            )
 
-            "V1LOCATIONS",
-            "V2ENHANCEDLOCATIONS",
+            print(
+                f"    ✓ saved "
+                f"{output.name} "
+                f"({size_mb:.2f} MB)"
+            )
 
-            "V1PERSONS",
-            "V2ENHANCEDPERSONS",
+            return True
 
-            "V1ORGANIZATIONS",
-            "V2ENHANCEDORGANIZATIONS",
+        except Exception as e:
 
-            "V1TONE",
+            print(
+                f"    attempt "
+                f"{attempt}/{MAX_RETRIES} "
+                f"failed:"
+            )
 
-            "V2ENHANCEDDATES",
-            "V2GCAM",
+            print(
+                f"    {type(e).__name__}: {e}"
+            )
 
-            "V2QUOTATIONS",
-            "V2ALLNAMES",
-            "V2AMOUNTS",
+            if temp.exists():
+                temp.unlink()
 
-            "V2TRANSLATIONINFO",
-        ]
+            if attempt < MAX_RETRIES:
 
-        nyc = nyc[keep]
+                delay = min(
+                    2 ** attempt,
+                    60,
+                )
 
-        year = year_from_filename(url)
+                print(
+                    f"    retrying in "
+                    f"{delay}s..."
+                )
 
-        save_append(
-            nyc,
-            GKG_OUT / f"gdelt_gkg_nyc_{year}.csv"
-        )
+                time.sleep(delay)
+
+    print(
+        f"    ✗ gave up on "
+        f"{year}-{month:02d}"
+    )
+
+    return False
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+months = list(
+    month_ranges(
+        START_YEAR,
+        START_MONTH,
+        END_YEAR,
+        END_MONTH,
+    )
+)
+
+print(
+    f"Months to process: {len(months)}"
+)
+
+successes = 0
+failures = 0
+skipped = 0
+
+for i, (
+    year,
+    month,
+    start_date,
+    end_date,
+) in enumerate(
+    months,
+    start=1,
+):
+
+    output = (
+        EVENTS_OUT /
+        f"gdelt_events_nyc_{year}_{month:02d}.parquet"
+    )
+
+    print(
+        f"\n[{i}/{len(months)}] "
+        f"{year}-{month:02d}"
+    )
+
+    if output.exists():
+
+        skipped += 1
 
         print(
-            f"    kept {len(nyc):,} NYC GKG records"
+            "    already complete"
         )
 
-    except Exception as e:
-        print(f"    ERROR: {e}")
+        continue
+
+    success = download_month(
+        year,
+        month,
+        start_date,
+        end_date,
+    )
+
+    if success:
+        successes += 1
+    else:
+        failures += 1
 
 
 print("\n========================================")
 print("DONE")
 print("========================================")
-print(f"Output directory: {BASE_OUT.resolve()}")
+
+print(f"Downloaded: {successes}")
+print(f"Skipped:    {skipped}")
+print(f"Failed:     {failures}")
+print(f"Output:     {EVENTS_OUT.resolve()}")
