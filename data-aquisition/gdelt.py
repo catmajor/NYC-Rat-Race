@@ -19,7 +19,7 @@ END_MONTH = 9
 LAT_MIN, LAT_MAX = 40.45, 41.05
 LON_MIN, LON_MAX = -74.30, -73.55
 
-PROJECT_ID = "YOUR-GOOGLE-CLOUD-PROJECT-ID"
+PROJECT_ID = "nyc-rat-race"
 
 OUT = Path("gdelt_nyc")
 EVENTS_OUT = OUT / "events"
