@@ -1,11 +1,20 @@
 # NYC Rat Race API
 
-FastAPI starter service for the NYC Rat Race project.
+FastAPI service (HTTP API + serves the built frontend) for the NYC Rat Race project.
 
 ## Run locally
 
-From this directory, create and activate a virtual environment, then install
-the project with its development dependencies:
+Build the frontend first so the API has static files to serve:
+
+```bash
+cd ../frontend
+npm install
+npm run build
+cd ../backend
+```
+
+Then create and activate a virtual environment, and install the project with
+its development dependencies:
 
 ```bash
 python -m venv .venv
@@ -19,8 +28,24 @@ Start the development server with:
 uvicorn app.main:app --reload
 ```
 
-The API is available at <http://127.0.0.1:8000>. Interactive documentation
-is available at <http://127.0.0.1:8000/docs>.
+The app is available at <http://127.0.0.1:8000> (the map + roaming rat).
+Interactive API docs are at <http://127.0.0.1:8000/docs>.
+
+## Frontend development
+
+For hot-reload during frontend work, run the Vite dev server instead
+(it proxies nothing; it just serves the map with HMR):
+
+```bash
+cd ../frontend
+npm run dev
+```
+
+Open <http://127.0.0.1:5173>. Rebuild (`npm run build`) before restarting the
+API so the served `dist/` matches.
+
+If `frontend/dist/` does not exist, the API serves a JSON hint at `/` instead
+of failing.
 
 ## Test
 

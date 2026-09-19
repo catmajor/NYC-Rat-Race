@@ -1,0 +1,277 @@
+import { useEffect, useRef, useState } from 'react'
+import { Map as MapLibreMap, NavigationControl, type StyleSpecification } from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
+import { MapboxOverlay } from '@deck.gl/mapbox'
+import { LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core'
+import { GeoJsonLayer, TextLayer } from '@deck.gl/layers'
+import { ScenegraphLayer } from '@deck.gl/mesh-layers'
+import { RatRouter } from '../lib/ratRouter'
+import { zoneAt, polygonCentroid, type TaxiZone } from '../lib/zones'
+
+// Tune-by-eye constants (visual calibration happens in the browser):
+export const RAT_SIZE_SCALE = 1500 // rat.glb is ~1 world unit; this makes the rat
+// a ~1.5 km-wide "giant rat taxi" so it is visible at city zoom (~57 m/px at z11.4).
+export const RAT_YAW_OFFSET = 0 // rotate the model to face +heading
+export const RAT_SPEED_MPS = 55 // playful "taxi rat" ground speed
+
+const RAT_URL = '/rat.glb'
+const ROADS_URL = '/data/nyc_roads.geojson'
+const ZONES_URL = '/data/taxi_zones.geojson'
+
+const BOROUGH_COLORS: Record<string, [number, number, number]> = {
+  Manhattan: [242, 148, 60],
+  Brooklyn: [72, 158, 218],
+  Queens: [106, 199, 108],
+  Bronx: [232, 99, 99],
+  'Staten Island': [167, 140, 222],
+  EWR: [180, 180, 180],
+}
+
+const MAP_STYLE: StyleSpecification = {
+  version: 8,
+  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+  sources: {
+    carto: {
+      type: 'raster',
+      tiles: ['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors, © CARTO',
+    },
+  },
+  layers: [
+    { id: 'carto-basemap', type: 'raster', source: 'carto' },
+  ],
+}
+
+interface RatPose {
+  lon: number
+  lat: number
+  heading: number
+}
+
+export default function NycMap() {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const overlayRef = useRef<MapboxOverlay | null>(null)
+  const routerRef = useRef<RatRouter | null>(null)
+  const zonesRef = useRef<TaxiZone[]>([])
+  const zonesLayerRef = useRef<GeoJsonLayer | null>(null)
+  const labelsLayerRef = useRef<TextLayer<any> | null>(null)
+  const poseRef = useRef<RatPose>({ lon: -73.985, lat: 40.755, heading: 0 })
+
+  const [status, setStatus] = useState<string>('loading map…')
+  const [inZone, setInZone] = useState<string>('')
+  const [inBorough, setInBorough] = useState<string>('')
+  const [hovered, setHovered] = useState<string | null>(null)
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const map = new MapLibreMap({
+      container,
+      style: MAP_STYLE,
+      center: [-73.985, 40.755],
+      zoom: 11.4,
+      minZoom: 10,
+      maxBounds: [
+        [-74.45, 40.3],
+        [-73.3, 41.05],
+      ],
+      attributionControl: { compact: true },
+    })
+    ;(window as any).__map = map
+
+    // Overlaid (not interleaved): MapLibre v6 removed the private `map.transform`
+    // that deck.gl's interleaved path reads, so interleaved renders crash.
+    // Overlaid still forwards mouse events to deck picking via map handlers.
+    const lighting = new LightingEffect({
+      ambient: new AmbientLight({ color: [255, 255, 255], intensity: 1.1 }),
+      sun: new DirectionalLight({ color: [255, 255, 255], intensity: 3.0, direction: [30, 80, 50] }),
+      fill: new DirectionalLight({ color: [255, 214, 170], intensity: 1.0, direction: [-60, -40, -60] }),
+    })
+    const overlay = new MapboxOverlay({ layers: [], effects: [lighting] })
+    ;(window as any).__overlay = overlay
+    map.addControl(overlay)
+    overlayRef.current = overlay
+    map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
+
+    // MapLibre v6 sizes its canvas independently; deck's MapboxOverlay measures
+    // map.getContainer().clientHeight at add time and ends up 0px tall.
+    // Force the deck widget container to track the real canvas size.
+    const syncDeckSize = () => {
+      try {
+        const wrap = overlayRef.current?.getCanvas()?.parentElement
+        const cvs = map.getCanvas()
+        if (!wrap || !cvs) return
+        const w = cvs.clientWidth
+        const h = cvs.clientHeight
+        if (w > 0 && h > 0 && (wrap.style.width !== `${w}px` || wrap.style.height !== `${h}px`)) {
+          wrap.style.width = `${w}px`
+          wrap.style.height = `${h}px`
+        }
+      } catch {
+        // deck not initialized yet; next tick will retry
+      }
+    }
+    map.on('load', syncDeckSize)
+    map.on('resize', syncDeckSize)
+
+    let rafId = 0
+    let last = performance.now()
+    let lastProps = 0
+    let disposed = false
+
+    const makeRatLayer = (pose: RatPose): ScenegraphLayer => {
+      return new ScenegraphLayer({
+        id: 'rat',
+        data: [{ ...pose }],
+        scenegraph: RAT_URL,
+        getPosition: (d) => [d.lon, d.lat],
+        getOrientation: (d) => [0, d.heading + RAT_YAW_OFFSET, 0],
+        sizeScale: RAT_SIZE_SCALE,
+        // PBR mode: the flat rendering path outputs `vColor` (instance color,
+        // white) and never reads the glTF materials' baseColorFactor, so the rat
+        // renders as a flat white silhouette. PBR mode routes through
+        // pbr_filterColor which applies per-material baseColorFactor + lighting.
+        _lighting: 'pbr',
+      })
+    }
+
+    const tick = (now: number) => {
+      const dt = Math.min((now - last) / 1000, 0.25)
+      last = now
+      const router = routerRef.current
+      if (router) {
+        const moved = router.step(dt, RAT_SPEED_MPS)
+        poseRef.current = { lon: moved.point.lon, lat: moved.point.lat, heading: moved.headingDeg }
+        ;(window as any).__ratPose = poseRef.current
+        // Throttle deck layer updates to ~8fps: recreating the ScenegraphLayer on
+        // every frame forces constant GL work for no visible benefit.
+        if (now - lastProps > 125) {
+          lastProps = now
+          overlay.setProps({ layers: [makeRatLayer(poseRef.current), zonesLayerRef.current, labelsLayerRef.current] })
+        }
+      }
+      rafId = requestAnimationFrame(tick)
+    }
+
+    const boot = async () => {
+      try {
+        const zonesRes = await fetch(ZONES_URL)
+        if (disposed) return
+        if (!zonesRes.ok) throw new Error(`zones ${zonesRes.status}`)
+        const zonesDoc = (await zonesRes.json()) as {
+          features: Array<{ properties: { zone: string; borough: string; location_id: number }; geometry: GeoJSON.Geometry }>
+        }
+        const zones: TaxiZone[] = zonesDoc.features.map((f) => ({
+          location_id: f.properties.location_id,
+          zone: f.properties.zone,
+          borough: f.properties.borough,
+          centroid: polygonCentroid(f.geometry),
+          geometry: f.geometry,
+        }))
+        zonesRef.current = zones
+
+        const features = zones.map((z) => ({
+          type: 'Feature' as const,
+          properties: z,
+          geometry: z.geometry,
+        }))
+        zonesLayerRef.current = new GeoJsonLayer({
+          id: 'zones',
+          data: features,
+          pickable: true,
+          stroked: true,
+          filled: true,
+          wireframe: false,
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 1,
+          getFillColor: (f) => {
+            const c = BOROUGH_COLORS[f.properties.borough] ?? [160, 160, 160]
+            return [c[0], c[1], c[2], 55]
+          },
+          getLineColor: (f) => {
+            const c = BOROUGH_COLORS[f.properties.borough] ?? [200, 200, 200]
+            return [c[0], c[1], c[2], 230]
+          },
+          onHover: (info) => {
+            const z = info.object?.properties as TaxiZone | undefined
+            setHovered(z ? `${z.zone} · ${z.borough}` : null)
+          },
+        })
+        labelsLayerRef.current = new TextLayer<any>({
+          id: 'zone-labels',
+          data: zones.filter((z) => z.borough === 'Manhattan'),
+          getPosition: (d) => [d.centroid.lon, d.centroid.lat],
+          getText: (d) => d.zone,
+          getAlignmentBaseline: 'center',
+          getTextAnchor: 'middle',
+          getSize: 12,
+          sizeUnits: 'pixels',
+          fontFamily: 'Consolas, monospace',
+          getColor: [51, 51, 51, 230],
+          background: true,
+          getBackgroundColor: [255, 255, 255, 160],
+          getBorderColor: [110, 110, 110, 180],
+          getBorderWidth: 1,
+        })
+
+        const roadsRes = await fetch(ROADS_URL)
+        if (disposed) return
+        if (!roadsRes.ok) throw new Error(`roads ${roadsRes.status}`)
+        const roads = await roadsRes.json()
+        const router = RatRouter.fromGeoJson(roads)
+        routerRef.current = router
+        const p = router.position
+        poseRef.current = { lon: p.lon, lat: p.lat, heading: 0 }
+        setStatus(`roaming ${router.nodeCount.toLocaleString()} road nodes`)
+        overlay.setProps({ layers: [makeRatLayer(poseRef.current), zonesLayerRef.current, labelsLayerRef.current] })
+        rafId = requestAnimationFrame(tick)
+      } catch (err) {
+        console.error(err)
+        setStatus(`failed to load: ${String(err)}`)
+      }
+    }
+
+    boot()
+
+    return () => {
+      disposed = true
+      cancelAnimationFrame(rafId)
+      overlayRef.current = null
+      map.remove()
+    }
+  }, [])
+
+  // Update the HUD a few times per second, not every frame.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const router = routerRef.current
+      if (!router) return
+      const z = zoneAt(zonesRef.current, poseRef.current.lon, poseRef.current.lat)
+      setInZone(z ? z.zone : '—')
+      setInBorough(z ? z.borough : '')
+      setStatus('roaming')
+    }, 400)
+    return () => window.clearInterval(id)
+  }, [])
+
+  return (
+    <>
+      <div ref={containerRef} className="map-container" />
+      <div className="hud">
+        <div className="hud-row">
+          <span className="hud-label">ZONE</span>
+          <span className="hud-value">{inZone || '—'}</span>
+          <span className="hud-sub">{inBorough}</span>
+        </div>
+        <div className="hud-row">
+          <span className="hud-label">UNIT</span>
+          <span className="hud-value">RAT-01</span>
+          <span className="hud-sub">{status}</span>
+        </div>
+      </div>
+      {hovered && <div className="tooltip">{hovered}</div>}
+    </>
+  )
+}

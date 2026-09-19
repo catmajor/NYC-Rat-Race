@@ -1,0 +1,10 @@
+import puppeteer from "puppeteer-core"
+const b = await puppeteer.launch({executablePath:"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",headless:"new",args:["--no-sandbox","--enable-unsafe-swiftshader","--force-device-scale-factor=1","--window-size=1000,750"],defaultViewport:{width:1000,height:750}})
+const p = await b.newPage()
+await p.goto("http://127.0.0.1:8000/",{waitUntil:"domcontentloaded",timeout:45000})
+await new Promise(r=>setTimeout(r,7000))
+const read=()=>p.evaluate(()=>{const w=window.__ratPose; return w?[w.lon.toFixed(5),w.lat.toFixed(5),Math.round(w.heading)]:null})
+const a=await read(); await new Promise(r=>setTimeout(r,5000)); const c=await read()
+console.log("t1",JSON.stringify(a)); console.log("t2",JSON.stringify(c))
+console.log("travel:",a&&c&&(a[0]!==c[0]||a[1]!==c[1]))
+await b.close(); process.exit(0)
