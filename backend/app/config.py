@@ -34,6 +34,11 @@ class Settings:
         "RAT_RACE_GDELT_GLOB",
         "data/gdelt_nyc/events/gdelt_events_nyc_*.parquet",
     )
+    region_polygons: str = os.getenv(
+        "RAT_RACE_REGION_POLYGONS",
+        "ml/models/region_polygons.geojson",
+    )
+    news_scenario: Optional[str] = os.getenv("RAT_RACE_NEWS_SCENARIO")
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     openai_temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.8"))
@@ -110,7 +115,23 @@ def get_point_in_time_signals() -> PointInTimeSignals:
         gdelt_files=gdelt_files,
         start_date=start,
         end_date=end,
+        region_polygons_path=str(_resolve_path(settings.region_polygons)),
+        news_scenario=_load_news_scenario(settings.news_scenario),
     )
+
+
+def _load_news_scenario(value: Optional[str]) -> Optional[dict]:
+    """Load an optional authored-news JSON; missing/malformed files are None."""
+    if not value:
+        return None
+    path = _resolve_path(value) if not Path(value).exists() else Path(value)
+    try:
+        import json
+
+        with path.open(encoding="utf-8") as source:
+            return json.load(source)
+    except (OSError, ValueError):
+        return None
 
 
 @lru_cache(maxsize=1)

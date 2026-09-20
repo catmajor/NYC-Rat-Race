@@ -9,6 +9,7 @@ event files are daily-granularity data.
 from __future__ import annotations
 
 import csv
+import json
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -62,12 +63,72 @@ def _local_to_utc_naive(timestamp: datetime) -> datetime:
     return localized.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def _gdelt_game_zone(latitude: Optional[float], longitude: Optional[float]) -> Optional[str]:
-    """Assign approximate GDELT coordinates to a Rat Race macro-zone."""
+def _load_region_polygons(path: Optional[str]) -> Optional[List[Tuple[str, List[List[Tuple[float, float]]]]]]:
+    """Load the per-region geojson produced by the ML pipeline.
+
+    Returns ``[(zone_slug, [rings...])]`` where a ring is a list of (lon, lat)
+    pairs. ``None`` when the path is empty/missing so signals can fall back to
+    the approximate ``_gdelt_game_zone`` heuristic.
+    """
+    if not path:
+        return None
+    try:
+        with Path(path).open(encoding="utf-8") as source:
+            collection = json.load(source)
+    except (OSError, ValueError):
+        return None
+    polygons = []
+    for feature in collection.get("features", []):
+        name = (feature.get("properties") or {}).get("name")
+        geometry = feature.get("geometry")
+        if not name or not geometry:
+            continue
+        poly = geometry.get("coordinates")
+        if geometry.get("type") == "Polygon":
+            rings = poly
+        elif geometry.get("type") == "MultiPolygon":
+            rings = [ring for polygon in poly for ring in polygon]
+        else:
+            continue
+        polygons.append((name, [[(point[0], point[1]) for point in ring] for ring in rings]))
+    return polygons or None
+
+
+def _inside_polygon(point_lon: float, point_lat: float, ring: List[Tuple[float, float]]) -> bool:
+    """Even-odd ray casting on a (lon, lat) ring (ccw/cw agnostic)."""
+    inside = False
+    j = len(ring) - 1
+    for i in range(len(ring)):
+        lon_i, lat_i = ring[i]
+        lon_j, lat_j = ring[j]
+        if (lat_i > point_lat) != (lat_j > point_lat) and point_lon < (
+            lon_j - lon_i
+        ) * (point_lat - lat_i) / (lat_j - lat_i + 1e-12) + lon_i:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _gdelt_game_zone(
+    latitude: Optional[float],
+    longitude: Optional[float],
+    region_polygons: Optional[List[Tuple[str, List[List[Tuple[float, float]]]]]] = None,
+) -> Optional[str]:
+    """Assign approximate GDELT coordinates to a Rat Race macro-zone.
+
+    Uses the ML pipeline's per-region polygons (12 zones) when available, else
+    falls back to the coarse bounding-box heuristic (kept for standalone use
+    and hermetic tests).
+    """
 
     if latitude is None or longitude is None:
         return None
     if not (40.45 <= latitude <= 41.05 and -74.30 <= longitude <= -73.55):
+        return None
+    if region_polygons:
+        for name, rings in region_polygons:
+            if any(_inside_polygon(longitude, latitude, ring) for ring in rings):
+                return name
         return None
     if (40.60 <= latitude <= 40.72 and -74.30 <= longitude <= -73.70) or (
         latitude < 40.68 and longitude > -73.90
@@ -90,6 +151,75 @@ def _gdelt_game_zone(latitude: Optional[float], longitude: Optional[float]) -> O
     return "queens_west"
 
 
+def _apply_authored_news(
+    events_by_date: Dict[date, Dict[str, float]],
+    scenario: Optional[Mapping],
+) -> None:
+    """Merge a game-authored news scenario into the historical daily records.
+
+    Scenario schema::
+
+        {
+          "citywide": [{"date": "2019-10-18", "event_count": 5,
+                        "news_volume": 200, "avg_tone": -3.0,
+                        "goldstein_scale": -4.0}, ...],
+          "zones": [{"game_zone": "queens_east", "date": "2019-10-17",
+                     "zone_event_count": 400, "zone_event_mentions": 8000,
+                     "zone_avg_tone": 8.0, "zone_avg_goldstein": 6.0}, ...]
+        }
+
+    Scenario dates are the *event* dates; the model consumes news after its
+    standard 1-day lag, so an event dated D shows up in predictions for D+1.
+    Fields that are omitted keep their historical value.
+    """
+    if not scenario:
+        return
+
+    def _to_date(value: str) -> Optional[date]:
+        try:
+            return date.fromisoformat(str(value))
+        except ValueError:
+            return None
+
+    for row in scenario.get("citywide") or []:
+        event_date = _to_date((row or {}).get("date", ""))
+        if not event_date:
+            continue
+        aggregate = events_by_date.setdefault(event_date, defaultdict(float))
+        for key in (
+            "event_count",
+            "news_volume",
+            "num_sources",
+            "num_articles",
+            "avg_tone",
+            "goldstein_scale",
+        ):
+            if key in row:
+                aggregate[key] = float(row[key])
+
+    for row in scenario.get("zones") or []:
+        event_date = _to_date((row or {}).get("date", ""))
+        zone_id = (row or {}).get("game_zone")
+        if not event_date or not zone_id:
+            continue
+        aggregate = events_by_date.setdefault(event_date, defaultdict(float))
+        flat = {
+            "event_count": f"event_count:{zone_id}",
+            "news_volume": f"news_volume:{zone_id}",
+            "num_sources": f"num_sources:{zone_id}",
+            "num_articles": f"num_articles:{zone_id}",
+            "avg_tone": f"avg_tone:{zone_id}",
+            "goldstein_scale": f"goldstein_scale:{zone_id}",
+            "zone_event_count": f"zone_event_count:{zone_id}",
+            "zone_event_mentions": f"zone_event_mentions:{zone_id}",
+            "zone_avg_tone": f"zone_avg_tone:{zone_id}",
+            "zone_avg_goldstein": f"zone_avg_goldstein:{zone_id}",
+        }
+        for authored_key, flat_key in flat.items():
+            if authored_key in row:
+                aggregate[flat_key] = float(row[authored_key])
+
+
 class PointInTimeSignals:
     """Lazy, cached NOAA/GDELT feature store for adviser inputs."""
 
@@ -100,11 +230,15 @@ class PointInTimeSignals:
         gdelt_files: Sequence[str] = (),
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
+        region_polygons_path: Optional[str] = None,
+        news_scenario: Optional[Mapping] = None,
     ) -> None:
         self.noaa_files = tuple(noaa_files)
         self.gdelt_files = tuple(gdelt_files)
         self.start_date = start_date
         self.end_date = end_date
+        self._region_polygons = _load_region_polygons(region_polygons_path)
+        self._news_scenario = news_scenario
         self._weather_by_hour: Optional[Dict[datetime, Dict[str, float]]] = None
         self._events_by_date: Optional[Dict[date, Dict[str, float]]] = None
 
@@ -212,12 +346,6 @@ class PointInTimeSignals:
                 event_date = datetime.strptime(str(int(sql_date)), "%Y%m%d").date()
             except (TypeError, ValueError):
                 continue
-            zone_id = _gdelt_game_zone(
-                float(latitude) if latitude is not None else None,
-                float(longitude) if longitude is not None else None,
-            )
-            if zone_id is None:
-                continue
             aggregate = aggregates[event_date]
             aggregate["event_count"] += 1.0
             aggregate["news_volume"] += float(mentions or 0)
@@ -225,15 +353,55 @@ class PointInTimeSignals:
             aggregate["num_articles"] += float(articles or 0)
             aggregate["avg_tone_total"] += float(tone or 0)
             aggregate["goldstein_scale_total"] += float(goldstein or 0)
-            aggregate[f"event_count:{zone_id}"] += 1.0
-            aggregate[f"news_volume:{zone_id}"] += float(mentions or 0)
-            aggregate[f"num_sources:{zone_id}"] += float(sources or 0)
-            aggregate[f"num_articles:{zone_id}"] += float(articles or 0)
+            zone = _gdelt_game_zone(
+                float(latitude) if latitude is not None else None,
+                float(longitude) if longitude is not None else None,
+                self._region_polygons,
+            )
+            if zone is None:
+                continue
+            aggregate[f"event_count:{zone}"] += 1.0
+            aggregate[f"news_volume:{zone}"] += float(mentions or 0)
+            aggregate[f"num_sources:{zone}"] += float(sources or 0)
+            aggregate[f"num_articles:{zone}"] += float(articles or 0)
+            aggregate[f"avg_tone:{zone}_total"] += float(tone or 0)
+            aggregate[f"goldstein_scale:{zone}_total"] += float(goldstein or 0)
+            # Model-named per-zone keys so a feature builder can reuse them
+            # directly (event_mentions == news_volume; same source magnitude).
+            aggregate[f"zone_event_count:{zone}"] += 1.0
+            aggregate[f"zone_event_mentions:{zone}"] += float(mentions or 0)
+            aggregate[f"zone_avg_tone:{zone}_total"] += float(tone or 0)
+            aggregate[f"zone_avg_goldstein:{zone}_total"] += float(goldstein or 0)
 
         for event_date, aggregate in aggregates.items():
             count = aggregate["event_count"] or 1.0
             aggregate["avg_tone"] = aggregate.pop("avg_tone_total") / count
             aggregate["goldstein_scale"] = aggregate.pop("goldstein_scale_total") / count
+
+            # Per-zone adviser keys (avg_tone:{zone}, goldstein_scale:{zone}).
+            for zone_key in [
+                key
+                for key in list(aggregate)
+                if key.startswith(("avg_tone:", "goldstein_scale:")) and key.endswith("_total")
+            ]:
+                base, _, zone = zone_key[: -len("_total")].partition(":")
+                aggregate[f"{base}:{zone}"] = aggregate.pop(zone_key) / (
+                    aggregate.get(f"event_count:{zone}", 0.0) or 1.0
+                )
+            # Per-zone model keys (zone_avg_tone:{zone}, zone_avg_goldstein:{zone}).
+            for zone_key in [
+                key
+                for key in list(aggregate)
+                if key.startswith(("zone_avg_tone:", "zone_avg_goldstein:")) and key.endswith("_total")
+            ]:
+                base, _, zone = zone_key[: -len("_total")].partition(":")
+                aggregate[f"{base}:{zone}"] = aggregate.pop(zone_key) / (
+                    aggregate.get(f"zone_event_count:{zone}", 0.0) or 1.0
+                )
+
+        _apply_authored_news(aggregates, self._news_scenario)
+
+        for event_date, aggregate in aggregates.items():
             self._events_by_date[event_date] = dict(aggregate)
 
     def events_at(self, timestamp: datetime) -> Dict[str, float]:

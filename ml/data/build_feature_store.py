@@ -3,7 +3,7 @@
 Combines:
   * demand:  pickups / dropoffs per 15-min bucket (all 4 TLC services)
   * weather: hourly per-zone readings stamped onto each 15-min bucket
-  * events:  daily citywide GDELT features (joined with a 1-day lag)
+  * events:  daily citywide + per-region GDELT features (joined with a 1-day lag)
 
 Every 15-min bucket is present for every zone (missing demand = 0) so that
 lag/rolling features computed downstream are exact.
@@ -32,6 +32,7 @@ FEATURE_COLS = [
     "event_articles",
     "avg_tone",
     "avg_goldstein",
+    *config.EVENT_ZONE_FEATURES,
 ]
 
 
@@ -72,11 +73,20 @@ def load() -> pd.DataFrame:
         ev.drop(columns=["date"]), on="feat_date", how="left"
     ).drop(columns=["feat_date"])
 
+    # 4) Per-region events, same 1-day lag; keyed by (game_zone, feat_date).
+    evz = pd.read_parquet(config.ML_ARTIFACTS / "events_daily_zone.parquet")
+    evz["date"] = pd.to_datetime(evz["date"])
+    evz["feat_date"] = evz["date"] + pd.Timedelta(days=config.EVENTS_LAG_DAYS)
+    grid["feat_date"] = grid["ts"].dt.floor("D")
+    grid = grid.merge(
+        evz.drop(columns=["date"]), on=["game_zone", "feat_date"], how="left"
+    ).drop(columns=["feat_date"])
+
     grid["ts"] = pd.to_datetime(grid["ts"])
 
     # Weather / events fill on a few edge hours (per zone forward fill).
     weather_cols = ["temp_c", "wind_ms", "vis_km", "precip_mm", "precip_3h_mm"]
-    for c in weather_cols + ["event_count", "event_mentions", "event_articles", "avg_tone", "avg_goldstein"]:
+    for c in weather_cols + ["event_count", "event_mentions", "event_articles", "avg_tone", "avg_goldstein"] + config.EVENT_ZONE_FEATURES:
         grid[c] = grid.groupby("game_zone")[c].ffill()
     grid[weather_cols] = grid[weather_cols].fillna(
         {"temp_c": 0.0, "wind_ms": 0.0, "vis_km": 0.0, "precip_mm": 0.0, "precip_3h_mm": 0.0}
@@ -85,6 +95,12 @@ def load() -> pd.DataFrame:
         ["event_count", "event_mentions", "event_articles"]
     ].fillna(0)
     grid[["avg_tone", "avg_goldstein"]] = grid[["avg_tone", "avg_goldstein"]].fillna(0.0)
+    grid[["zone_event_count", "zone_event_mentions"]] = grid[
+        ["zone_event_count", "zone_event_mentions"]
+    ].fillna(0)
+    grid[["zone_avg_tone", "zone_avg_goldstein"]] = grid[
+        ["zone_avg_tone", "zone_avg_goldstein"]
+    ].fillna(0.0)
 
     grid = grid[["game_zone", "ts"] + FEATURE_COLS].reset_index(drop=True)
     grid = grid.sort_values(["game_zone", "ts"]).reset_index(drop=True)

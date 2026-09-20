@@ -11,6 +11,10 @@
     "event_mentions",
     "avg_tone",
     "avg_goldstein",
+    "zone_event_count",
+    "zone_event_mentions",
+    "zone_avg_tone",
+    "zone_avg_goldstein",
     "horizon",
     "zone_id"
   ],
@@ -60,290 +64,322 @@
   "models": {
     "mean": {
       "alpha": null,
-      "best_iter": 250,
+      "best_iter": 185,
       "importance": {
         "gain": {
-          "avg_goldstein": 22941116850.0,
-          "avg_tone": 25960965834.0,
-          "dow": 177022475112.0,
-          "event_count": 59756561336.0,
-          "event_mentions": 30398891962.0,
-          "horizon": 74753560548.0,
-          "hour": 429534193302.0,
-          "precip_3h_mm": 15997264184.0,
-          "precip_mm": 8538545318.0,
-          "temp_c": 61200703704.0,
-          "vis_km": 29863181852.0,
-          "wind_ms": 95165948064.0,
-          "zone_id": 4909762680748.0
+          "avg_goldstein": 15662776226.0,
+          "avg_tone": 16044318788.0,
+          "dow": 171835060190.0,
+          "event_count": 46376916228.0,
+          "event_mentions": 22894807704.0,
+          "horizon": 70497880504.0,
+          "hour": 436439810138.0,
+          "precip_3h_mm": 7381304954.0,
+          "precip_mm": 5784028792.0,
+          "temp_c": 51760871810.0,
+          "vis_km": 11129003824.0,
+          "wind_ms": 69232008308.0,
+          "zone_avg_goldstein": 81617149206.0,
+          "zone_avg_tone": 183820986816.0,
+          "zone_event_count": 192918283640.0,
+          "zone_event_mentions": 30721526520.0,
+          "zone_id": 4507806247390.0
         },
         "split": {
-          "avg_goldstein": 1380,
-          "avg_tone": 1471,
-          "dow": 1362,
-          "event_count": 1655,
-          "event_mentions": 1273,
-          "horizon": 755,
-          "hour": 1316,
-          "precip_3h_mm": 397,
-          "precip_mm": 405,
-          "temp_c": 1836,
-          "vis_km": 656,
-          "wind_ms": 998,
-          "zone_id": 1996
+          "avg_goldstein": 692,
+          "avg_tone": 625,
+          "dow": 1032,
+          "event_count": 904,
+          "event_mentions": 587,
+          "horizon": 643,
+          "hour": 1051,
+          "precip_3h_mm": 188,
+          "precip_mm": 185,
+          "temp_c": 1118,
+          "vis_km": 299,
+          "wind_ms": 515,
+          "zone_avg_goldstein": 555,
+          "zone_avg_tone": 692,
+          "zone_event_count": 539,
+          "zone_event_mentions": 445,
+          "zone_id": 1400
         },
         "top10": [
           "zone_id",
           "hour",
+          "zone_event_count",
+          "zone_avg_tone",
           "dow",
-          "wind_ms",
+          "zone_avg_goldstein",
           "horizon",
+          "wind_ms",
           "temp_c",
-          "event_count",
-          "event_mentions",
-          "vis_km",
-          "avg_tone"
+          "event_count"
         ]
       },
       "metrics": {
         "by_horizon": {
           "1": {
-            "mae": 517.2123051671448,
+            "mae": 534.1816039507929,
             "n": 4416,
-            "rmse": 808.4415602265245
+            "rmse": 826.0144185218717
           },
           "2": {
-            "mae": 499.5594788672394,
+            "mae": 510.21014877443224,
             "n": 4416,
-            "rmse": 801.9727034494348
+            "rmse": 822.5183434233569
           },
           "3": {
-            "mae": 505.38685881350915,
+            "mae": 519.7492291154683,
             "n": 4416,
-            "rmse": 799.1688786232675
+            "rmse": 823.4522590475958
           }
         },
-        "mae": 507.38621428263116,
-        "rmse": 803.2037661638677
+        "mae": 521.3803272802312,
+        "rmse": 823.9963324765708
       },
       "name": "mean",
       "objective": "regression"
     },
     "p10": {
       "alpha": 0.1,
-      "best_iter": 262,
+      "best_iter": 394,
       "importance": {
         "gain": {
-          "avg_goldstein": 4690.312,
-          "avg_tone": 6186.2614,
-          "dow": 6827.8555,
-          "event_count": 6102.6538,
-          "event_mentions": 4428.4498,
-          "horizon": 3605.4915,
-          "hour": 6091.5544,
-          "precip_3h_mm": 1598.2937,
-          "precip_mm": 1377.7043,
-          "temp_c": 6226.9543,
-          "vis_km": 4462.0309,
-          "wind_ms": 5550.2001,
-          "zone_id": 161831.0809
+          "avg_goldstein": 4898.6866,
+          "avg_tone": 4988.587,
+          "dow": 6980.3663,
+          "event_count": 5697.0758,
+          "event_mentions": 4107.6848,
+          "horizon": 3831.4199,
+          "hour": 6900.4906,
+          "precip_3h_mm": 1884.882,
+          "precip_mm": 1280.9816,
+          "temp_c": 6531.2583,
+          "vis_km": 4025.6935,
+          "wind_ms": 4877.9026,
+          "zone_avg_goldstein": 6221.8667,
+          "zone_avg_tone": 6384.9374,
+          "zone_event_count": 6950.0958,
+          "zone_event_mentions": 5611.5935,
+          "zone_id": 153302.2234
         },
         "split": {
-          "avg_goldstein": 1412,
-          "avg_tone": 1757,
-          "dow": 1371,
-          "event_count": 1689,
-          "event_mentions": 1283,
-          "horizon": 688,
-          "hour": 1151,
-          "precip_3h_mm": 451,
-          "precip_mm": 391,
-          "temp_c": 1694,
-          "vis_km": 922,
-          "wind_ms": 1220,
-          "zone_id": 2215
+          "avg_goldstein": 1592,
+          "avg_tone": 1665,
+          "dow": 1577,
+          "event_count": 1777,
+          "event_mentions": 1347,
+          "horizon": 804,
+          "hour": 1386,
+          "precip_3h_mm": 500,
+          "precip_mm": 429,
+          "temp_c": 2049,
+          "vis_km": 866,
+          "wind_ms": 1357,
+          "zone_avg_goldstein": 1670,
+          "zone_avg_tone": 1841,
+          "zone_event_count": 1528,
+          "zone_event_mentions": 1467,
+          "zone_id": 2573
         },
         "top10": [
           "zone_id",
           "dow",
-          "temp_c",
-          "avg_tone",
-          "event_count",
+          "zone_event_count",
           "hour",
-          "wind_ms",
-          "avg_goldstein",
-          "vis_km",
-          "event_mentions"
+          "temp_c",
+          "zone_avg_tone",
+          "zone_avg_goldstein",
+          "event_count",
+          "zone_event_mentions",
+          "avg_tone"
         ]
       },
       "metrics": {
         "by_horizon": {
           "1": {
-            "mae": 978.3027908107489,
+            "mae": 927.3977197674002,
             "n": 4416,
-            "rmse": 1341.4624695827733
+            "rmse": 1279.0708568257303
           },
           "2": {
-            "mae": 962.2229519225606,
+            "mae": 927.9752416468539,
             "n": 4416,
-            "rmse": 1380.1090902623048
+            "rmse": 1345.4019775625873
           },
           "3": {
-            "mae": 942.2315184508302,
+            "mae": 911.934127459344,
             "n": 4416,
-            "rmse": 1399.7386457702648
+            "rmse": 1366.206224367735
           }
         },
-        "coverage": 0.07820048309178744,
-        "mae": 960.9190870613799,
-        "pinball": 126.23884651081795,
-        "rmse": 1373.9833738424609
+        "coverage": 0.09284420289855072,
+        "mae": 922.4356962911993,
+        "pinball": 125.80628340229774,
+        "rmse": 1330.7451778998827
       },
       "name": "p10",
       "objective": "quantile"
     },
     "p50": {
       "alpha": 0.5,
-      "best_iter": 301,
+      "best_iter": 621,
       "importance": {
         "gain": {
-          "avg_goldstein": 13521.5008,
-          "avg_tone": 13707.1585,
-          "dow": 31756.5116,
-          "event_count": 18006.6588,
-          "event_mentions": 12618.9514,
-          "horizon": 20938.8199,
-          "hour": 38179.2961,
-          "precip_3h_mm": 3047.9096,
-          "precip_mm": 2571.3999,
-          "temp_c": 18011.8407,
-          "vis_km": 12041.5666,
-          "wind_ms": 11259.5973,
-          "zone_id": 334633.6649
+          "avg_goldstein": 15974.6038,
+          "avg_tone": 15440.9331,
+          "dow": 34093.1028,
+          "event_count": 17926.1845,
+          "event_mentions": 13235.7648,
+          "horizon": 19692.8871,
+          "hour": 40021.7821,
+          "precip_3h_mm": 3665.6876,
+          "precip_mm": 3227.3025,
+          "temp_c": 21108.6017,
+          "vis_km": 9771.9468,
+          "wind_ms": 13881.4916,
+          "zone_avg_goldstein": 16021.2364,
+          "zone_avg_tone": 23828.8638,
+          "zone_event_count": 29081.662,
+          "zone_event_mentions": 23233.0494,
+          "zone_id": 287856.1909
         },
         "split": {
-          "avg_goldstein": 1704,
-          "avg_tone": 1765,
-          "dow": 1524,
-          "event_count": 1885,
-          "event_mentions": 1516,
-          "horizon": 841,
-          "hour": 1458,
-          "precip_3h_mm": 493,
-          "precip_mm": 430,
-          "temp_c": 1988,
-          "vis_km": 1177,
-          "wind_ms": 1260,
-          "zone_id": 2621
+          "avg_goldstein": 2734,
+          "avg_tone": 2726,
+          "dow": 2114,
+          "event_count": 2635,
+          "event_mentions": 2107,
+          "horizon": 1045,
+          "hour": 2075,
+          "precip_3h_mm": 846,
+          "precip_mm": 734,
+          "temp_c": 3392,
+          "vis_km": 1340,
+          "wind_ms": 2400,
+          "zone_avg_goldstein": 2939,
+          "zone_avg_tone": 3323,
+          "zone_event_count": 2289,
+          "zone_event_mentions": 2431,
+          "zone_id": 3372
         },
         "top10": [
           "zone_id",
           "hour",
           "dow",
-          "horizon",
+          "zone_event_count",
+          "zone_avg_tone",
+          "zone_event_mentions",
           "temp_c",
+          "horizon",
           "event_count",
-          "avg_tone",
-          "avg_goldstein",
-          "event_mentions",
-          "vis_km"
+          "zone_avg_goldstein"
         ]
       },
       "metrics": {
         "by_horizon": {
           "1": {
-            "mae": 524.8564853904941,
+            "mae": 530.5236470076045,
             "n": 4416,
-            "rmse": 835.1061503049374
+            "rmse": 849.2987783454251
           },
           "2": {
-            "mae": 508.84549704343846,
+            "mae": 513.2098647936938,
             "n": 4416,
-            "rmse": 813.227953655156
+            "rmse": 827.2558724190184
           },
           "3": {
-            "mae": 524.0393896143762,
+            "mae": 516.4670596575451,
             "n": 4416,
-            "rmse": 834.4362772961529
+            "rmse": 829.8860061713331
           }
         },
-        "coverage": 0.34035326086956524,
-        "mae": 519.247124016103,
-        "pinball": 259.6235620080515,
-        "rmse": 827.6524809667294
+        "coverage": 0.3671497584541063,
+        "mae": 520.0668571529477,
+        "pinball": 260.03342857647385,
+        "rmse": 835.5380455310993
       },
       "name": "p50",
       "objective": "quantile"
     },
     "p90": {
       "alpha": 0.9,
-      "best_iter": 214,
+      "best_iter": 289,
       "importance": {
         "gain": {
-          "avg_goldstein": 2897.0783,
-          "avg_tone": 2930.8062,
-          "dow": 7681.9481,
-          "event_count": 4030.1196,
-          "event_mentions": 2851.8373,
-          "horizon": 4273.8878,
-          "hour": 8823.6982,
-          "precip_3h_mm": 1022.751,
-          "precip_mm": 846.2746,
-          "temp_c": 4991.1346,
-          "vis_km": 2200.3852,
-          "wind_ms": 3992.3194,
-          "zone_id": 63726.8791
+          "avg_goldstein": 2978.6225,
+          "avg_tone": 2730.5888,
+          "dow": 8273.8899,
+          "event_count": 4333.1855,
+          "event_mentions": 2790.4201,
+          "horizon": 4258.9293,
+          "hour": 9088.4049,
+          "precip_3h_mm": 891.8485,
+          "precip_mm": 705.5388,
+          "temp_c": 5577.2984,
+          "vis_km": 1552.882,
+          "wind_ms": 3782.8978,
+          "zone_avg_goldstein": 5014.9675,
+          "zone_avg_tone": 3913.8364,
+          "zone_event_count": 6666.6676,
+          "zone_event_mentions": 2238.6265,
+          "zone_id": 55078.883
         },
         "split": {
-          "avg_goldstein": 1157,
-          "avg_tone": 1146,
-          "dow": 1187,
-          "event_count": 1274,
-          "event_mentions": 1000,
-          "horizon": 759,
-          "hour": 966,
-          "precip_3h_mm": 403,
-          "precip_mm": 341,
-          "temp_c": 1630,
-          "vis_km": 699,
-          "wind_ms": 977,
-          "zone_id": 1729
+          "avg_goldstein": 1240,
+          "avg_tone": 1054,
+          "dow": 1174,
+          "event_count": 1318,
+          "event_mentions": 990,
+          "horizon": 732,
+          "hour": 994,
+          "precip_3h_mm": 385,
+          "precip_mm": 297,
+          "temp_c": 1790,
+          "vis_km": 559,
+          "wind_ms": 1083,
+          "zone_avg_goldstein": 1206,
+          "zone_avg_tone": 1242,
+          "zone_event_count": 979,
+          "zone_event_mentions": 925,
+          "zone_id": 1950
         },
         "top10": [
           "zone_id",
           "hour",
           "dow",
+          "zone_event_count",
           "temp_c",
-          "horizon",
+          "zone_avg_goldstein",
           "event_count",
-          "wind_ms",
-          "avg_tone",
-          "avg_goldstein",
-          "event_mentions"
+          "horizon",
+          "zone_avg_tone",
+          "wind_ms"
         ]
       },
       "metrics": {
         "by_horizon": {
           "1": {
-            "mae": 621.0196067915683,
+            "mae": 628.1295892166072,
             "n": 4416,
-            "rmse": 992.5621383900589
+            "rmse": 999.6834353140833
           },
           "2": {
-            "mae": 580.1951985685739,
+            "mae": 585.0297822452122,
             "n": 4416,
-            "rmse": 932.6585498004594
+            "rmse": 937.5884727467989
           },
           "3": {
-            "mae": 563.7834349391767,
+            "mae": 576.6576245707786,
             "n": 4416,
-            "rmse": 893.6093397040986
+            "rmse": 911.3565513218234
           }
         },
-        "coverage": 0.7317330917874396,
-        "mae": 588.3327467664395,
-        "pinball": 133.9464629720328,
-        "rmse": 940.4908684808761
+        "coverage": 0.7080314009661836,
+        "mae": 596.6056653441993,
+        "pinball": 145.92281330149575,
+        "rmse": 950.2648540812625
       },
       "name": "p90",
       "objective": "quantile"

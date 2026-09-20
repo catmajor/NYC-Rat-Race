@@ -11,6 +11,10 @@
     "event_mentions",
     "avg_tone",
     "avg_goldstein",
+    "zone_event_count",
+    "zone_event_mentions",
+    "zone_avg_tone",
+    "zone_avg_goldstein",
     "horizon",
     "zone_id"
   ],

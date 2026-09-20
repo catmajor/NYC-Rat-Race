@@ -126,6 +126,15 @@ EVENTS_LAG_DAYS = 1
 # ``FEATURE_ORDER`` is the active variant's columns, persisted to
 # models/feature_columns.json and shared with the backend so ONNX input rows
 # can be built in exactly the right order.
+# Event features: citywide + per-region, both lagged one day. Per-region tone /
+# Goldstein fall back to a 7-day trailing zone average when a zone-day is empty.
+EVENT_ZONE_FEATURES: list[str] = [
+    "zone_event_count",
+    "zone_event_mentions",
+    "zone_avg_tone",
+    "zone_avg_goldstein",
+]
+
 FEATURE_ORDER_LIVE: list[str] = [
     # time
     "hour",
@@ -160,6 +169,8 @@ FEATURE_ORDER_LIVE: list[str] = [
     "event_mentions",
     "avg_tone",
     "avg_goldstein",
+    # events (lagged one day, per-region)
+    *EVENT_ZONE_FEATURES,
     # multi-horizon + zone identity
     "horizon",
     "zone_id",
@@ -180,9 +191,20 @@ FEATURE_ORDER_CONTEXT: list[str] = [
     "event_mentions",
     "avg_tone",
     "avg_goldstein",
+    # events (lagged one day, per-region)
+    *EVENT_ZONE_FEATURES,
     # multi-horizon + zone identity
     "horizon",
     "zone_id",
+]
+
+# Event features: citywide + per-region, both lagged one day. Per-region tone /
+# Goldstein fall back to a 7-day trailing zone average when a zone-day is empty.
+EVENT_ZONE_FEATURES: list[str] = [
+    "zone_event_count",
+    "zone_event_mentions",
+    "zone_avg_tone",
+    "zone_avg_goldstein",
 ]
 
 VARIANTS: dict[str, list[str]] = {
