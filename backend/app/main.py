@@ -14,7 +14,8 @@ from .config import (
     get_narrative_generator,
     get_point_in_time_signals,
 )
-from .game import BASELINE_BY_ZONE, SESSION, ZONE_IDS
+from .data import real_weekday_mean
+from .game import SESSION, ZONE_IDS
 from .models import AdviserResponse, HistoricalState
 
 
@@ -93,30 +94,15 @@ ADVISER_METADATA = {
 def _game_state() -> Dict[str, object]:
     """Return the game state with store-derived regional context."""
     state = SESSION.state()
-    store, data_source = get_analogue_store()
-    means = store.weekday_mean(SESSION.timestamp)
+    means = real_weekday_mean(SESSION.timestamp)
     zones = state["zones"]
     assert isinstance(zones, dict)
     for zone_id in ZONE_IDS:
         zone = zones[zone_id]
         assert isinstance(zone, dict)
         zone["historic_mean"] = round(
-            means.get(zone_id, BASELINE_BY_ZONE[zone_id]), 1
+            means[zone_id], 1
         )
-
-    if data_source.startswith("tlc-"):
-        signals = get_point_in_time_signals()
-        regional = signals.weather_by_zone_at(SESSION.timestamp)
-        for zone_id, weather in regional.items():
-            if zone_id in zones:
-                zones[zone_id]["weather"] = {
-                    **zones[zone_id].get("weather", {}),
-                    **weather,
-                }
-        state["events"] = {
-            **state.get("events", {}),
-            **signals.events_at(SESSION.timestamp),
-        }
 
     state["weekday_label"] = SESSION.timestamp.strftime("%A").upper()
     return state

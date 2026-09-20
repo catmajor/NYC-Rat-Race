@@ -13,11 +13,13 @@ import math
 import random
 from typing import Dict, List, Mapping, Optional
 
+from .demand_model import DemandModel
+from .event_catalog import select_events
 from .models import ZONE_IDS
 
 
 FLEET_SIZE = 130
-START_DATE = date(2024, 10, 18)
+START_DATE = date(2019, 10, 18)
 TOTAL_ROUNDS = 12
 
 ZONE_LABELS: Dict[str, str] = {
@@ -177,7 +179,9 @@ class GameSession:
     game_over_reason: Optional[str] = None
 
     def __post_init__(self) -> None:
-        self._profile = _profile_for(self.round_number, self.day)
+        self._rng = random.Random(20191018)
+        self._demand_model = DemandModel()
+        self._initialize_world()
 
     @property
     def timestamp(self) -> datetime:
@@ -200,7 +204,110 @@ class GameSession:
         self.total_model_match = 0
         self.best_model_match = 0
         self.game_over_reason = None
-        self._profile = _profile_for(self.round_number, self.day)
+        self._rng = random.Random(20191018)
+        self._initialize_world()
+
+    def _initialize_world(self) -> None:
+        """Seed every region from the real historical snapshot for game start."""
+        from .config import get_point_in_time_signals
+
+        signals = get_point_in_time_signals()
+        city_weather = signals.weather_at(self.timestamp)
+        if not city_weather:
+            raise RuntimeError("Real weather data has no observation at the game start timestamp")
+        visibility_m = float(city_weather.get("visibility_m", 10_000.0))
+        self._weather_by_zone = {
+            zone_id: {
+                "temperature_c": round(float(city_weather.get("temperature_c", 0.0)), 3),
+                "rain_mm": round(max(0.0, float(city_weather.get("rain_mm", 0.0))), 3),
+                "wind_mps": round(max(0.0, float(city_weather.get("wind_mps", 0.0))), 3),
+                "visibility_km": round(max(0.1, visibility_m / 1000.0), 3),
+            }
+            for zone_id in ZONE_IDS
+        }
+        self._weather_bias = {
+            zone_id: {
+                key: self._rng.choice((-1.0, 1.0))
+                for key in self._weather_by_zone[zone_id]
+            }
+            for zone_id in ZONE_IDS
+        }
+        self._signals = signals
+        self._refresh_profile()
+
+    def _advance_weather(self) -> None:
+        step_size = {
+            "temperature_c": 0.45,
+            "rain_mm": 0.35,
+            "wind_mps": 0.3,
+            "visibility_km": 0.45,
+        }
+        bounds = {
+            "temperature_c": (-20.0, 42.0),
+            "rain_mm": (0.0, 30.0),
+            "wind_mps": (0.0, 25.0),
+            "visibility_km": (0.2, 20.0),
+        }
+        for zone_id in ZONE_IDS:
+            for key, bias in self._weather_bias[zone_id].items():
+                roll = self._rng.uniform(-1.0, 1.0)
+                low, high = bounds[key]
+                value = self._weather_by_zone[zone_id][key] + (roll + bias) * step_size[key]
+                self._weather_by_zone[zone_id][key] = round(max(low, min(high, value)), 3)
+
+    def _refresh_profile(self) -> None:
+        events = dict(self._signals.events_at(self.timestamp))
+        news = select_events(self.timestamp, self._weather_by_zone, events)
+        events["event_count"] = events.get("event_count", 0.0) + len(news)
+        for item in news:
+            zone_id = str(item["zone_id"])
+            tone = float(item["tone"])
+            events[zone_id] = max(events.get(zone_id, 0.0), 1.0)
+            events[f"event_count:{zone_id}"] = events.get(f"event_count:{zone_id}", 0.0) + 1.0
+            events[f"zone_event_count:{zone_id}"] = events.get(f"zone_event_count:{zone_id}", 0.0) + 1.0
+            events[f"zone_avg_tone:{zone_id}"] = tone
+        self._events = events
+        forecast, confidence = self._demand_model.predict(
+            self.timestamp,
+            self._weather_by_zone,
+            self._events,
+            list(ZONE_IDS),
+        )
+        baseline = {zone_id: round(forecast[zone_id] * 0.92) for zone_id in ZONE_IDS}
+        actual = {
+            zone_id: max(1, round(forecast[zone_id] * self._rng.uniform(0.88, 1.12)))
+            for zone_id in ZONE_IDS
+        }
+        self._model_confidence = confidence
+        self._profile = {
+            "baseline": baseline,
+            "model_forecast": forecast,
+            "actual_demand": actual,
+            "recent_demand": dict(baseline),
+            "weather": self._city_weather(),
+            "weather_by_zone": {
+                zone_id: {
+                    **self._weather_by_zone[zone_id],
+                    "label": "Wet conditions" if self._weather_by_zone[zone_id]["rain_mm"] > 0.2 else "Clear conditions",
+                    "note": "Weather is evolving from the real historical snapshot",
+                }
+                for zone_id in ZONE_IDS
+            },
+            "events": dict(self._events),
+            "news": news,
+        }
+
+    def _city_weather(self) -> Dict[str, object]:
+        weather: Dict[str, object] = {
+            key: round(
+                sum(self._weather_by_zone[zone_id][key] for zone_id in ZONE_IDS) / len(ZONE_IDS),
+                3,
+            )
+            for key in ("temperature_c", "rain_mm", "wind_mps", "visibility_km")
+        }
+        weather["label"] = "Wet conditions" if float(weather["rain_mm"]) > 0.2 else "Clear conditions"
+        weather["note"] = "Weather is evolving from the real historical snapshot"
+        return weather
 
     def state(self) -> Dict[str, object]:
         profile = self._profile
@@ -224,7 +331,7 @@ class GameSession:
                 "model_share": round(forecast / total_forecast, 4),
                 "idle_taxis": self.idle_taxis.get(zone_id, 0),
                 "trend": "up" if forecast >= float(baseline[zone_id]) else "flat",
-                "weather": dict(profile["weather"]),
+                "weather": dict(profile["weather_by_zone"][zone_id]),
             }
         weather = dict(profile["weather"])
         weather["note"] = "Wet roads favor dense central pickups" if weather["rain_mm"] else "Good visibility across the core"
@@ -251,9 +358,10 @@ class GameSession:
             "weather": weather,
             "events": profile["events"],
             "news": profile["news"],
-            "model_name": "Demand model / scenario replay",
-            "model_confidence": 0.78 if self.round_number % 3 else 0.71,
-            "data_source": "synthetic-scenario",
+            "model_name": "ONNX demand model",
+            "model_confidence": self._model_confidence,
+            "data_source": "real-history+onnx",
+            "weather_bias": self._weather_bias,
             "completed": self.completed,
         }
 
@@ -321,7 +429,8 @@ class GameSession:
             self.round_number += 1
         self.idle_taxis = normalized
         if not self.completed:
-            self._profile = _profile_for(self.round_number, self.day)
+            self._advance_weather()
+            self._refresh_profile()
         return result
 
     def timeout(self) -> None:

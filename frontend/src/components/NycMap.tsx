@@ -7,12 +7,14 @@ import { GeoJsonLayer, IconLayer, LineLayer, PolygonLayer, ScatterplotLayer } fr
 import { ScenegraphLayer } from '@deck.gl/mesh-layers'
 import { RatRouter, type RoadPoint } from '../lib/ratRouter'
 import { polygonCentroid, type TaxiZone } from '../lib/zones'
-import { getActiveWeatherEvent, type WeatherConfig, type WeatherEvent } from '../lib/weatherEvents'
+import { type WeatherEvent } from '../lib/weatherEvents'
 
 // Tune-by-eye constants (visual calibration happens in the browser):
 export const RAT_SIZE_SCALE = 50// rat.glb is ~1 world unit; this makes the rat
 // a ~1.5 km-wide "giant rat taxi" so it is visible at city zoom (~57 m/px at z11.4).
 export const RAT_SPEED_MPS = 800 // fast dispatch speed across the road graph
+export const DISPATCH_ASTAR_SPEED_MPS = 1800
+export const DISPATCH_RANDOM_WALK_SPEED_MPS = 120
 
 // Footstep-trail feel: dots dropped at the rat's position that fade away.
 export const FOOTSTEP_DROP_MS = 250 // interval between new dots
@@ -57,7 +59,6 @@ const BUILDINGS_URL = '/data/buildings.geojson'
 // Per-region weather/event instructions (see weather-graphics-handoff.md §4).
 // The game will later emit this instruction object and the map just re-renders;
 // the frontend never hardcodes event→region.
-const WEATHER_URL = '/data/weather_events.json'
 
 // Multiply a base rgb region color by an event tint (rgba). Returns the base
 // color when no tint is set so the weather reads as a subtle region-wide wash.
@@ -220,6 +221,9 @@ export interface DispatchRun {
 interface DispatchRat {
   zoneId: string
   routes: Array<RoadPoint[]>
+  routeLengths: number[]
+  routeSpeeds: number[]
+  totalRouteDuration: number
 }
 
 interface FleetPosition extends RoadPoint {
@@ -327,6 +331,7 @@ function pointInRegion(geometry: GeoJSON.Geometry | undefined, seed: number): [n
 export interface NycMapProps {
   allocationByZone?: Record<string, number>
   events?: Record<string, number>
+  weatherEventsByZone?: Record<string, WeatherEvent | null>
   selectedZone?: string | null
   onZoneSelect?: (zoneId: string) => void
   dispatchRun?: DispatchRun | null
@@ -335,6 +340,7 @@ export interface NycMapProps {
 export default function NycMap({
   allocationByZone = {},
   events = {},
+  weatherEventsByZone = {},
   selectedZone = null,
   onZoneSelect,
   dispatchRun = null,
@@ -347,9 +353,9 @@ export default function NycMap({
   const regionGeometryRef = useRef<Record<string, GeoJSON.Geometry>>({})
   const airportGeometryRef = useRef<GeoJSON.Geometry | null>(null)
   const regionsLayerRef = useRef<GeoJsonLayer | null>(null)
-  // Per-region weather instructions; tint/badge accessors read it live so the
-  // layers refresh as soon as the (initially static) config loads.
-  const weatherRef = useRef<WeatherConfig | null>(null)
+  // Per-region weather metrics from the game state; all visual effects derive
+  // from these values and refresh as the simulation advances.
+  const weatherEventsRef = useRef(weatherEventsByZone)
   // Building data is kept separate from the layer so the layer can be rebuilt
   // with a different `visible` flag on zoom-gate crossings. Rebuilding preserves
   // the same `data` reference, so deck reuses GPU buffers instead of unloading
@@ -374,10 +380,11 @@ export default function NycMap({
   useEffect(() => {
     allocationRef.current = allocationByZone
     eventsRef.current = events
+    weatherEventsRef.current = weatherEventsByZone
     selectedZoneRef.current = selectedZone
     onZoneSelectRef.current = onZoneSelect
     dispatchRunRef.current = dispatchRun
-  }, [allocationByZone, dispatchRun, events, onZoneSelect, selectedZone])
+  }, [allocationByZone, dispatchRun, events, onZoneSelect, selectedZone, weatherEventsByZone])
 
   useEffect(() => {
     const container = containerRef.current
@@ -462,7 +469,7 @@ export default function NycMap({
         elevationScale: heightScale,
         getFillColor: (f: { properties: { region: string } }) => {
           const c = REGION_COLORS[f.properties.region] ?? [170, 170, 170]
-          const tinted = tintColor(c, getActiveWeatherEvent(weatherRef.current, f.properties.region))
+           const tinted = tintColor(c, weatherEventsRef.current[f.properties.region] ?? null)
           return [
             Math.round(tinted[0] * 0.58),
             Math.round(tinted[1] * 0.58),
@@ -491,21 +498,6 @@ export default function NycMap({
       }
       buildingsDataRef.current = doc.features
       console.log(`[buildings] loaded ${doc.features.length} features`)
-    }
-
-    const loadWeather = async () => {
-      try {
-        const res = await fetch(WEATHER_URL)
-        if (disposed) return
-        if (!res.ok) throw new Error(`weather ${res.status}`)
-        weatherRef.current = (await res.json()) as WeatherConfig
-        ;(window as any).__weatherConfig = weatherRef.current
-        console.log(
-          `[weather] loaded ${Object.keys(weatherRef.current.regions ?? {}).length} regions`,
-        )
-      } catch (err) {
-        console.error('[weather]', err)
-      }
     }
 
     const makeDispatchRats = (run: DispatchRun): DispatchRat[] => {
@@ -548,14 +540,16 @@ export default function NycMap({
               : fallback
           const insideDestination = Boolean(destinationGeometry && pointInGeometry([origin.lon, origin.lat], destinationGeometry))
           const routes: Array<RoadPoint[]> = []
+          const routeSpeeds: number[] = []
           let current = origin
           if (!insideDestination) {
             const target = targets[index % Math.max(targets.length, 1)] ?? fallback
             const approach = routerRef.current?.aStarRoute(current, target) ?? [current, target]
             routes.push(approach)
+            routeSpeeds.push(DISPATCH_ASTAR_SPEED_MPS)
             current = approach[approach.length - 1] ?? target
           }
-          for (let segment = routes.length; segment < 6; segment += 1) {
+          for (let segment = routes.length; segment < 10; segment += 1) {
             const walk = routerRef.current?.boundedRandomWalk(
               current,
               (point) => Boolean(destinationGeometry && pointInGeometry([point.lon, point.lat], destinationGeometry)),
@@ -563,9 +557,21 @@ export default function NycMap({
               seed + segment,
             ) ?? [current]
             routes.push(walk)
+            routeSpeeds.push(DISPATCH_RANDOM_WALK_SPEED_MPS)
             current = walk[walk.length - 1] ?? current
           }
-          rats.push({ zoneId, routes })
+          const routeLengths = routes.map((route) => RatRouter.routeLength(route))
+          const totalRouteDuration = routeLengths.reduce(
+            (sum, length, index) => sum + length / routeSpeeds[index],
+            0,
+          )
+          rats.push({
+            zoneId,
+            routes,
+            routeLengths,
+            routeSpeeds,
+            totalRouteDuration,
+          })
         }
       }
       return rats
@@ -574,15 +580,20 @@ export default function NycMap({
     const dispatchFleetData = (now: number): FleetPosition[] => {
       const elapsedSeconds = Math.max(0, now - (dispatchAnimationStartedAtRef.current ?? now)) / 1000
       return dispatchRatsRef.current.map((rat) => {
-        let remainingDistance = elapsedSeconds * RAT_SPEED_MPS
-        let sampled = RatRouter.pointAlongRouteMeters(rat.routes[rat.routes.length - 1], RatRouter.routeLength(rat.routes[rat.routes.length - 1]))
-        for (const route of rat.routes) {
-          const length = RatRouter.routeLength(route)
-          if (remainingDistance <= length) {
-            sampled = RatRouter.pointAlongRouteMeters(route, remainingDistance)
+        let remainingTime = rat.totalRouteDuration
+          ? elapsedSeconds % rat.totalRouteDuration
+          : 0
+        let sampled = RatRouter.pointAlongRouteMeters(rat.routes[0], 0)
+        for (let routeIndex = 0; routeIndex < rat.routes.length; routeIndex += 1) {
+          const route = rat.routes[routeIndex]
+          const length = rat.routeLengths[routeIndex]
+          const speed = rat.routeSpeeds[routeIndex]
+          const routeDuration = length / speed
+          if (remainingTime <= routeDuration) {
+            sampled = RatRouter.pointAlongRouteMeters(route, remainingTime * speed)
             break
           }
-          remainingDistance -= length
+          remainingTime -= routeDuration
         }
         return { ...sampled.point, zoneId: rat.zoneId, heading: (sampled.headingDeg + 360) % 360 }
       })
@@ -737,8 +748,7 @@ export default function NycMap({
     // pulsing region outline in the regions layer below. One layer per family
     // keeps deck buffer churn low while still updating ~8fps.
     const makeWeatherFX = (): Layer[] => {
-      const weather = weatherRef.current
-      if (!weather || !regionCentroidsRef.current) return []
+      if (!regionCentroidsRef.current) return []
       const t = performance.now() / 1000
       const clouds: CloudPoly[] = []
       const fog: CloudPoly[] = []
@@ -746,12 +756,12 @@ export default function NycMap({
       const activeSlugs: string[] = []
 
       for (const slug of Object.keys(regionCentroidsRef.current)) {
-        const ev = getActiveWeatherEvent(weather, slug)
+        const ev = weatherEventsRef.current[slug]
         if (!ev) continue
         activeSlugs.push(slug)
         const center = WEATHER_CENTERS[slug] ?? regionCentroidsRef.current[slug]
         // Area wind: region-level prevailing wind wins, event wind is fallback.
-        const wind = weather.regions?.[slug]?.wind ?? ev.wind
+        const wind = ev.wind
         const rand = mulberry32(hashStr(slug) || 1)
         const scale = REGION_CELL_SCALE[slug] ?? 1
         const lonHalf = 0.03 * scale
@@ -1104,14 +1114,14 @@ switch (ev.event) {
           pickable: false,
           filled: false,
           getLineWidth: (f: { properties: { name: string } }) => {
-            const event = getActiveWeatherEvent(weatherRef.current, f.properties.name)?.event
+             const event = weatherEventsRef.current[f.properties.name]?.event
             if (event !== 'heatwave' && event !== 'cold') return 0
             const phase = hashStr(f.properties.name) / 4294967296
             const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 900 + phase * Math.PI * 2)
             return 5 + pulse * 7
           },
           getLineColor: (f: { properties: { name: string } }) => {
-            const event = getActiveWeatherEvent(weatherRef.current, f.properties.name)?.event
+             const event = weatherEventsRef.current[f.properties.name]?.event
             const phase = hashStr(f.properties.name) / 4294967296
             const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 900 + phase * Math.PI * 2)
             const alpha = Math.round(28 + pulse * 34)
@@ -1178,7 +1188,6 @@ switch (ev.event) {
     const boot = async () => {
       try {
         loadBuildings().catch((err) => console.error('[buildings]', err))
-        loadWeather().catch((err) => console.error('[weather]', err))
         const zonesRes = await fetch(ZONES_URL)
         if (disposed) return
         if (!zonesRes.ok) throw new Error(`zones ${zonesRes.status}`)
@@ -1223,7 +1232,7 @@ switch (ev.event) {
           lineWidthMinPixels: 1.5,
           getLineWidth: (f: { properties: { name: string } }) => {
             if (selectedZoneRef.current === f.properties.name) return 4.5
-            const e = getActiveWeatherEvent(weatherRef.current, f.properties.name)
+             const e = weatherEventsRef.current[f.properties.name] ?? null
             return e?.event === 'heatwave' || e?.event === 'cold' ? 2.2 : 1.5
           },
           getFillColor: (f: { properties: { name: string } }) => {
@@ -1231,13 +1240,13 @@ switch (ev.event) {
             const selected = selectedZoneRef.current === f.properties.name
             const taxis = allocationRef.current[f.properties.name] ?? 0
             if (selected) return [245, 194, 24, 150]
-            const tinted = tintColor(c, getActiveWeatherEvent(weatherRef.current, f.properties.name))
+             const tinted = tintColor(c, weatherEventsRef.current[f.properties.name] ?? null)
             return [tinted[0], tinted[1], tinted[2], Math.min(125, 32 + taxis * 2)]
           },
           getLineColor: (f: { properties: { name: string } }) => {
             const name = f.properties.name
             if (selectedZoneRef.current === name) return [245, 194, 24, 255]
-            const ev = getActiveWeatherEvent(weatherRef.current, name)
+             const ev = weatherEventsRef.current[name] ?? null
             if (ev?.event === 'heatwave') {
               return [255, 82, 42, 235]
             }

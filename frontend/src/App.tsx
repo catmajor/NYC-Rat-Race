@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import NycMap, { type DispatchRun } from './components/NycMap.tsx'
-import { getActiveWeatherEvent, type WeatherConfig } from './lib/weatherEvents'
+import { getWeatherEventForMetrics } from './lib/weatherEvents'
 
 const ZONE_IDS = [
   'harlem',
@@ -293,7 +293,6 @@ export default function App() {
   const [dispatchRun, setDispatchRun] = useState<DispatchRun | null>(null)
   const [dispatchProgress, setDispatchProgress] = useState(0)
   const [apiConnected, setApiConnected] = useState(true)
-  const [weatherConfig, setWeatherConfig] = useState<WeatherConfig | null>(null)
   const [error, setError] = useState<string | null>(null)
   const allocationRef = useRef(allocation)
   const dispatchRef = useRef<() => void>(() => undefined)
@@ -304,16 +303,15 @@ export default function App() {
   const remaining = gameState.fleet_available - assigned
   const activeResponse = adviserResponses[activeAdviser] ?? fallbackAdviser(activeAdviser, gameState)
   const historicLeader = useMemo(() => ZONE_IDS.reduce((best, zoneId) => gameState.zones[zoneId].historic_mean > gameState.zones[best].historic_mean ? zoneId : best, ZONE_IDS[0]), [gameState])
-  const weatherEvent = getActiveWeatherEvent(weatherConfig, selectedZone)
+  const weatherEventsByZone = useMemo(
+    () => Object.fromEntries(ZONE_IDS.map((zoneId) => [zoneId, getWeatherEventForMetrics(gameState.zones[zoneId].weather ?? gameState.weather)])),
+    [gameState],
+  )
   const baseWeather = gameState.zones[selectedZone].weather ?? gameState.weather
-  const eventDelta = weatherEvent?.ml_delta ?? {}
+  const weatherEvent = weatherEventsByZone[selectedZone]
   const selectedWeather = {
     ...baseWeather,
     label: weatherEvent ? `${weatherEvent.emoji} ${weatherEvent.label}` : baseWeather.label,
-    temperature_c: baseWeather.temperature_c + (eventDelta.temp_c ?? 0),
-    rain_mm: Math.max(0, baseWeather.rain_mm + (eventDelta.precip_mm ?? 0)),
-    wind_mps: Math.max(0, baseWeather.wind_mps + (eventDelta.wind_ms ?? 0)),
-    visibility_km: Math.max(0.1, baseWeather.visibility_km + (eventDelta.vis_km ?? 0)),
   }
 
   useEffect(() => {
@@ -337,13 +335,6 @@ export default function App() {
   useEffect(() => {
     void loadState()
   }, [loadState])
-
-  useEffect(() => {
-    fetch('/data/weather_events.json')
-      .then((response) => response.ok ? response.json() as Promise<WeatherConfig> : null)
-      .then((config) => { if (config) setWeatherConfig(config) })
-      .catch(() => undefined)
-  }, [])
 
   useEffect(() => {
     setSecondsLeft(90)
@@ -598,7 +589,7 @@ export default function App() {
               <div><span className="eyebrow">NEW YORK CITY</span><h2>Taxi dispatch operations</h2></div>
               <div className="map-status"><span className="live-dot" /> SIMULATED SCENARIO <small>· {gameState.data_source}</small></div>
             </div>
-             <NycMap allocationByZone={allocation} events={gameState.events} selectedZone={selectedZone} dispatchRun={dispatchRun} onZoneSelect={(zoneId) => { if ((ZONE_IDS as readonly string[]).includes(zoneId)) setSelectedZone(zoneId as ZoneId) }} />
+              <NycMap allocationByZone={allocation} events={gameState.events} weatherEventsByZone={weatherEventsByZone} selectedZone={selectedZone} dispatchRun={dispatchRun} onZoneSelect={(zoneId) => { if ((ZONE_IDS as readonly string[]).includes(zoneId)) setSelectedZone(zoneId as ZoneId) }} />
             <div className="map-chrome map-chrome-bottom">
                <div className="map-key"><span className="key-swatch demand" /> Weekday average <span className="key-swatch fleet" /> Your fleet</div>
               <div className="map-coords">40° 44′ N&nbsp;&nbsp; 73° 59′ W</div>

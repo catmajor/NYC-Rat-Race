@@ -11,10 +11,50 @@ import math
 import csv
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Mapping, Optional, Protocol, Sequence, Tuple
 
 from .models import AnalogueMatch, HistoricalEpisode, HistoricalState, ZONE_IDS
+
+
+REAL_PICKUPS_PATH = Path(__file__).resolve().parents[2] / "ml" / "data" / "pickups_15m.parquet"
+
+
+@lru_cache(maxsize=64)
+def real_weekday_mean(timestamp: datetime) -> Dict[str, float]:
+    """Return real same-weekday demand for the current three-hour game window."""
+    if not REAL_PICKUPS_PATH.exists():
+        raise RuntimeError(f"Real pickup feature store is missing: {REAL_PICKUPS_PATH}")
+    try:
+        import duckdb
+    except ImportError as exc:
+        raise RuntimeError("Real weekday averages require DuckDB") from exc
+
+    weekday = (timestamp.weekday() + 1) % 7  # DuckDB Sunday=0, Python Monday=0.
+    connection = duckdb.connect()
+    try:
+        rows = connection.execute(
+            """
+            WITH daily_windows AS (
+                SELECT CAST(ts AS DATE) AS service_day,
+                       game_zone,
+                       SUM(pickups) AS window_pickups
+                FROM read_parquet(?)
+                WHERE dayofweek(ts) = ?
+                  AND EXTRACT(HOUR FROM ts) >= ?
+                  AND EXTRACT(HOUR FROM ts) < ?
+                GROUP BY service_day, game_zone
+            )
+            SELECT game_zone, AVG(window_pickups)
+            FROM daily_windows
+            GROUP BY game_zone
+            """,
+            [str(REAL_PICKUPS_PATH), weekday, timestamp.hour, timestamp.hour + 3],
+        ).fetchall()
+    finally:
+        connection.close()
+    return {str(zone_id): round(float(value), 1) for zone_id, value in rows}
 
 
 class AnalogueStore(Protocol):

@@ -31,8 +31,10 @@ def test_game_state_includes_weekday_means_and_regional_weather() -> None:
     assert response.status_code == 200
     state = response.json()
     assert state["weekday_label"] == "FRIDAY"
-    assert state["zones"]["midtown"]["historic_mean"] == 40.0
-    assert state["zones"]["midtown"]["weather"]["temperature_c"] == 17
+    assert state["zones"]["midtown"]["historic_mean"] == 27894.2
+    assert state["zones"]["staten_island"]["historic_mean"] < state["zones"]["midtown"]["historic_mean"]
+    assert state["zones"]["midtown"]["weather"]["temperature_c"] == state["weather"]["temperature_c"]
+    assert state["model_name"] == "ONNX demand model"
 
 
 def test_root_fallback_when_dist_missing(tmp_path: Path) -> None:

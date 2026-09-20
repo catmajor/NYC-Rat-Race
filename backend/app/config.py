@@ -27,12 +27,12 @@ class Settings:
 
     tlc_parquet_glob: Optional[str] = os.getenv("RAT_RACE_TLC_GLOB")
     tlc_zone_map: Optional[str] = os.getenv("RAT_RACE_TLC_ZONE_MAP")
-    tlc_start_date: Optional[str] = os.getenv("RAT_RACE_TLC_START_DATE")
-    tlc_end_date: Optional[str] = os.getenv("RAT_RACE_TLC_END_DATE")
-    noaa_glob: str = os.getenv("RAT_RACE_NOAA_GLOB", "data/noaa_isd_nyc/*.csv")
+    tlc_start_date: Optional[str] = os.getenv("RAT_RACE_TLC_START_DATE", "2019-10-18")
+    tlc_end_date: Optional[str] = os.getenv("RAT_RACE_TLC_END_DATE", "2019-10-21")
+    noaa_glob: str = os.getenv("RAT_RACE_NOAA_GLOB", "data/noaa_isd_nyc/*_2019.csv")
     gdelt_glob: str = os.getenv(
         "RAT_RACE_GDELT_GLOB",
-        "data/gdelt_nyc/events/gdelt_events_nyc_*.parquet",
+        "data/gdelt_nyc/events/gdelt_events_nyc_2019_*.parquet",
     )
     region_polygons: str = os.getenv(
         "RAT_RACE_REGION_POLYGONS",
