@@ -17,6 +17,10 @@ export const RAT_SPEED_MPS = 55 // playful "taxi rat" ground speed
 export const FOOTSTEP_DROP_MS = 250 // interval between new dots
 export const FOOTSTEP_LIFETIME_MS = 4500 // how long each dot lingers before fading out
 
+// Building extrusion exaggeration: multiplies real Overture heights (m) for
+// drama. Tune live via window.__buildingHeightScale before the layer updates.
+export const BUILDING_HEIGHT_SCALE = 2.5
+
 // rat.glb model frame: forward = -x, up = +y (standard glTF/Blender Y-up):
 // nose at negative x, eyes/body elevated along +y, and z is the lateral axis
 // (+z = left eye side). We align it to world space (deck lnglat: +x = east,
@@ -44,6 +48,10 @@ const ratModelMatrix = (headingDeg: number): number[] => {
 const RAT_URL = '/rat.glb'
 const ROADS_URL = '/data/nyc_roads.geojson'
 const ZONES_URL = '/data/taxi_zones.geojson'
+// NYC building footprints + Overture heights, pre-extracted to GeoJSON
+// (5 boroughs + EWR, filtered to height >= 10 m). Attribution required per
+// ODbL: shown in map credits.
+const BUILDINGS_URL = '/data/buildings.geojson'
 
 const BOROUGH_COLORS: Record<string, [number, number, number]> = {
   Manhattan: [242, 148, 60],
@@ -83,6 +91,13 @@ export default function NycMap() {
   const zonesRef = useRef<TaxiZone[]>([])
   const zonesLayerRef = useRef<GeoJsonLayer | null>(null)
   const labelsLayerRef = useRef<TextLayer<any> | null>(null)
+  // Building data is kept separate from the layer so the layer can be rebuilt
+  // with a different `visible` flag on zoom-gate crossings. Rebuilding preserves
+  // the same `data` reference, so deck reuses GPU buffers instead of unloading
+  // (removing the layer from the array permanently destroys it — the layer would
+  // never come back after zooming back in).
+  const buildingsDataRef = useRef<Array<any> | null>(null)
+  const zoomRef = useRef(11.4)
   const poseRef = useRef<RatPose>({ lon: -73.985, lat: 40.755, heading: 0 })
   const footstepsRef = useRef<Array<{ lon: number; lat: number; born: number }>>([])
 
@@ -100,6 +115,8 @@ export default function NycMap() {
       style: MAP_STYLE,
       center: [-73.985, 40.755],
       zoom: 11.4,
+      pitch: 55,
+      maxPitch: 80,
       minZoom: 10,
       maxBounds: [
         [-74.45, 40.3],
@@ -143,6 +160,54 @@ export default function NycMap() {
     }
     map.on('load', syncDeckSize)
     map.on('resize', syncDeckSize)
+    map.on('zoom', () => {
+      zoomRef.current = map.getZoom()
+    })
+    ;(window as any).__zoomRefGet = () => zoomRef.current
+
+    // Building layer factory: extruded footprints colored by the taxi zone
+    // borough they were joined to (see data prep). `visible` toggles the
+    // z12+ zoom gate without removing the layer from the scene.
+    const makeBuildingsLayer = (visible: boolean): GeoJsonLayer | null => {
+      const feats = buildingsDataRef.current
+      if (!feats) return null
+      const w = window as any
+      const heightScale = w.__buildingHeightScale ?? BUILDING_HEIGHT_SCALE
+      return new GeoJsonLayer({
+        id: 'buildings',
+        data: feats as any,
+        visible,
+        extruded: true,
+        pickable: false,
+        stroked: false,
+        filled: true,
+        wireframe: false,
+        opacity: 0.9,
+        getElevation: (f: { properties: { height: number } }) => f.properties.height,
+        elevationScale: heightScale,
+        getFillColor: (f: { properties: { borough: string } }) => {
+          const c = BOROUGH_COLORS[f.properties.borough] ?? [170, 170, 170]
+          return [c[0], c[1], c[2], 200]
+        },
+        material: {
+          ambient: 0.35,
+          diffuse: 0.75,
+          shininess: 8,
+          specularColor: [60, 60, 60],
+        },
+      })
+    }
+
+    const loadBuildings = async () => {
+      const res = await fetch(BUILDINGS_URL)
+      if (disposed) return
+      if (!res.ok) throw new Error(`buildings ${res.status}`)
+      const doc = (await res.json()) as {
+        features: Array<{ properties: { height: number; borough: string }; geometry: GeoJSON.Geometry }>
+      }
+      buildingsDataRef.current = doc.features
+      console.log(`[buildings] loaded ${doc.features.length} features`)
+    }
 
     let rafId = 0
     let last = performance.now()
@@ -195,6 +260,21 @@ export default function NycMap() {
       })
     }
 
+    // Static layers: 3D building extrusion appears only when zoomed in, keeping
+    // the city-wide roaming view cheap. Buildings always stay in the layer list
+    // (just hidden), otherwise deck unloads them and they never return after
+    // zooming back in.
+    const baseLayers = (pose: RatPose) => {
+      const showTiles = zoomRef.current >= 12
+      return [
+        makeRatLayer(pose),
+        makeFootstepsLayer(),
+        makeBuildingsLayer(showTiles),
+        zonesLayerRef.current,
+        labelsLayerRef.current,
+      ].filter(Boolean)
+    }
+
     const tick = (now: number) => {
       const dt = Math.min((now - last) / 1000, 0.25)
       last = now
@@ -219,9 +299,7 @@ export default function NycMap() {
             lastDrop = now
             footstepsRef.current.push({ ...pose, born: now })
           }
-          overlay.setProps({
-            layers: [makeRatLayer(poseRef.current), makeFootstepsLayer(), zonesLayerRef.current, labelsLayerRef.current],
-          })
+          overlay.setProps({ layers: baseLayers(poseRef.current) })
         }
       }
       rafId = requestAnimationFrame(tick)
@@ -229,6 +307,7 @@ export default function NycMap() {
 
     const boot = async () => {
       try {
+        loadBuildings().catch((err) => console.error('[buildings]', err))
         const zonesRes = await fetch(ZONES_URL)
         if (disposed) return
         if (!zonesRes.ok) throw new Error(`zones ${zonesRes.status}`)
@@ -297,9 +376,7 @@ export default function NycMap() {
         const p = router.position
         poseRef.current = { lon: p.lon, lat: p.lat, heading: 0 }
         setStatus(`roaming ${router.nodeCount.toLocaleString()} road nodes`)
-        overlay.setProps({
-          layers: [makeRatLayer(poseRef.current), makeFootstepsLayer(), zonesLayerRef.current, labelsLayerRef.current],
-        })
+        overlay.setProps({ layers: baseLayers(poseRef.current) })
         rafId = requestAnimationFrame(tick)
       } catch (err) {
         console.error(err)
@@ -344,6 +421,7 @@ export default function NycMap() {
           <span className="hud-value">RAT-01</span>
           <span className="hud-sub">{status}</span>
         </div>
+        <div className="hud-credit">buildings © Overture / ODbL</div>
       </div>
       {hovered && <div className="tooltip">{hovered}</div>}
     </>
