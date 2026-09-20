@@ -1,2 +1,10 @@
 *.csv
 *.parquet
+__pycache__/
+*.pyc
+ml/models/feature_columns.json
+ml/models/zone_codes.json
+ml/models/game_zones.json
+
+.vercel
+.env*
