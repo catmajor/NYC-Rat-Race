@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -12,6 +14,7 @@ from .config import (
     get_narrative_generator,
     get_point_in_time_signals,
 )
+from .game import SESSION, ZONE_IDS
 from .models import AdviserResponse, HistoricalState
 
 
@@ -27,6 +30,12 @@ class AdviserRequest(BaseModel):
     events: Dict[str, float] = Field(default_factory=dict)
     idle_taxis_by_zone: Dict[str, int] = Field(default_factory=dict)
     max_matches: int = Field(default=8, ge=1, le=50)
+
+
+class GameAdvanceRequest(BaseModel):
+    day: int = Field(ge=1, le=3)
+    round: int = Field(ge=1, le=4)
+    allocation: Dict[str, int]
 
 
 # The Don is intentionally not listed here yet: the canonical MVP spec makes
@@ -178,6 +187,28 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
             }
             for adviser_id, metadata in ADVISER_METADATA.items()
         ]
+
+    @app.get("/api/game/state", tags=["game"])
+    def game_state() -> Dict[str, object]:
+        """Return the current decision state for the local Rat Cab session."""
+        return SESSION.state()
+
+    @app.post("/api/game/reset", tags=["game"])
+    def reset_game() -> Dict[str, object]:
+        """Reset the local deterministic simulation to day one."""
+        SESSION.reset()
+        return SESSION.state()
+
+    @app.post("/api/game/advance", tags=["game"])
+    def advance_game(request: GameAdvanceRequest) -> Dict[str, object]:
+        """Score one allocation, hide the outcome, and move to the next turn."""
+        if request.day != SESSION.day or request.round != SESSION.round_number:
+            raise HTTPException(status_code=409, detail="This round is no longer current")
+        try:
+            result = SESSION.advance(request.allocation)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"result": result, "state": SESSION.state(), "zones": list(ZONE_IDS)}
 
     if frontend_dist is None:
         frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
