@@ -55,8 +55,9 @@ interface NewsItem {
 interface GameState {
   game_id: string
   day: number
-  round: number
-  total_rounds: number
+  turn: number
+  turn_in_day: number
+  total_turns: number
   timestamp: string
   time_start: string
   time_end: string
@@ -64,9 +65,15 @@ interface GameState {
   fleet_available: number
   assigned: number
   currency: number
+  starting_currency: number
   score: number
+  points: number
+  turns_completed: number
   rounds_completed: number
   total_trips_captured: number
+  total_trips_missed: number
+  total_gross_revenue: number
+  total_reposition_cost: number
   total_net_revenue: number
   average_model_match: number
   best_model_match: number
@@ -80,6 +87,7 @@ interface GameState {
   data_source: string
   completed: boolean
   game_over_reason: 'turns_complete' | 'time_expired' | null
+  last_result: DispatchResult | null
 }
 
 interface AdviserResponse {
@@ -95,20 +103,39 @@ interface AdviserResponse {
   narrative_source: string
 }
 
-interface RoundResult {
+interface DispatchResult {
   day: number
+  turn: number
+  turn_in_day: number
   round: number
   time_start: string
   time_end: string
   gross_revenue: number
+  model_payout_factor: number
+  model_aligned_revenue: number
+  model_alignment_adjustment: number
   reposition_cost: number
+  taxi_move_cost: number
   net_revenue: number
+  bank_before: number
+  bank_change: number
+  bank_after: number
   score_gain: number
   total_score: number
   currency: number
   trips_captured: number
+  trips_missed: number
+  capture_rate: number
   trips_model: number
+  repositioned_taxis: number
   model_match_percentage: number
+  bank_breakdown: {
+    fare_revenue: number
+    model_payout_factor: number
+    model_aligned_revenue: number
+    taxi_move_cost: number
+    bank_change: number
+  }
   model_allocation: Record<ZoneId, number>
   verdict: string
 }
@@ -149,8 +176,8 @@ const INITIAL_ALLOCATION: Record<ZoneId, number> = {
   harlem: 7,
   upper_west: 10,
   upper_east: 12,
-  midtown: 30,
-  downtown: 18,
+  midtown: 26,
+  downtown: 15,
   north_brooklyn: 12,
   south_brooklyn: 6,
   queens_west: 12,
@@ -206,18 +233,25 @@ function makeFallbackState(): GameState {
   return {
     game_id: 'rat-cab-preview',
     day: 1,
-    round: 1,
-    total_rounds: 12,
-    timestamp: '2024-10-18T08:00:00',
+    turn: 1,
+    turn_in_day: 1,
+    total_turns: 12,
+    timestamp: '2019-10-18T08:00:00',
     time_start: '08:00',
     time_end: '11:00',
     fleet_size: 130,
     fleet_available: 130,
     assigned: 130,
     currency: 2450,
-    score: 0,
+    starting_currency: 2450,
+    score: 2450,
+    points: 2450,
+    turns_completed: 0,
     rounds_completed: 0,
     total_trips_captured: 0,
+    total_trips_missed: 0,
+    total_gross_revenue: 0,
+    total_reposition_cost: 0,
     total_net_revenue: 0,
     average_model_match: 0,
     best_model_match: 0,
@@ -238,23 +272,17 @@ function makeFallbackState(): GameState {
     data_source: 'local-preview',
     completed: false,
     game_over_reason: null,
+    last_result: null,
   }
 }
 
 const currency = (value: number) => new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
-  maximumFractionDigits: 0,
+  maximumFractionDigits: 2,
 }).format(value)
 
 const shortNumber = (value: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)
-
-function simulationTime(timestamp: string, progress: number): string {
-  const start = new Date(timestamp)
-  const elapsedMinutes = Math.round(180 * Math.max(0, Math.min(1, progress)))
-  start.setMinutes(start.getMinutes() + elapsedMinutes)
-  return start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-}
 
 const allocationFromState = (state: GameState): Record<ZoneId, number> =>
   Object.fromEntries(ZONE_IDS.map((zoneId) => [zoneId, state.zones[zoneId].idle_taxis])) as Record<ZoneId, number>
@@ -287,11 +315,11 @@ export default function App() {
   const [adviserResponses, setAdviserResponses] = useState<Partial<Record<AdviserId, AdviserResponse>>>({})
   const [selectedZone, setSelectedZone] = useState<ZoneId>('midtown')
   const [secondsLeft, setSecondsLeft] = useState(90)
-  const [result, setResult] = useState<RoundResult | null>(null)
+  const [result, setResult] = useState<DispatchResult | null>(null)
+  const [rulesVisible, setRulesVisible] = useState(true)
   const [gameOverVisible, setGameOverVisible] = useState(false)
   const [isDispatching, setIsDispatching] = useState(false)
   const [dispatchRun, setDispatchRun] = useState<DispatchRun | null>(null)
-  const [dispatchProgress, setDispatchProgress] = useState(0)
   const [apiConnected, setApiConnected] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const allocationRef = useRef(allocation)
@@ -347,18 +375,6 @@ export default function App() {
   }, [gameState.completed])
 
   useEffect(() => {
-    if (!isDispatching) {
-      setDispatchProgress(0)
-      return
-    }
-    const startedAt = performance.now()
-    const timer = window.setInterval(() => {
-      setDispatchProgress(Math.min(1, (performance.now() - startedAt) / 15000))
-    }, 100)
-    return () => window.clearInterval(timer)
-  }, [isDispatching])
-
-  useEffect(() => {
     let cancelled = false
     const adviserWeather = numericSignals(gameState.weather as unknown as Record<string, unknown>)
     adviserWeather.visibility_m = gameState.weather.visibility_km * 1000
@@ -398,14 +414,13 @@ export default function App() {
       return
     }
     setIsDispatching(true)
-    setDispatchProgress(0)
     setDispatchRun({ id: Date.now(), allocation: nextAllocation })
     setError(null)
     try {
       const responsePromise = fetch('/api/game/advance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ day: gameState.day, round: gameState.round, allocation: nextAllocation }),
+        body: JSON.stringify({ day: gameState.day, turn: gameState.turn_in_day, allocation: nextAllocation }),
       })
       const [response] = await Promise.all([
         responsePromise,
@@ -415,9 +430,10 @@ export default function App() {
         const payload = await response.json().catch(() => ({})) as { detail?: string }
         throw new Error(payload.detail ?? 'Dispatch failed')
       }
-      const payload = await response.json() as { result: RoundResult; state: GameState }
+      const payload = await response.json() as { result: DispatchResult; state: GameState }
       setResult(payload.result)
       setGameState(payload.state)
+      setAllocation(allocationFromState(payload.state))
       if (payload.state.completed) setGameOverVisible(true)
       setApiConnected(true)
     } catch (dispatchError) {
@@ -437,7 +453,7 @@ export default function App() {
       const response = await fetch('/api/game/timeout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ day: gameState.day, round: gameState.round }),
+        body: JSON.stringify({ day: gameState.day, turn: gameState.turn_in_day }),
       })
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as { detail?: string }
@@ -501,6 +517,7 @@ export default function App() {
       setGameState(nextState)
       setAllocation(allocationFromState(nextState))
       setResult(null)
+      setRulesVisible(true)
       setGameOverVisible(false)
       setSecondsLeft(90)
       setError(null)
@@ -511,6 +528,7 @@ export default function App() {
       setGameState(nextState)
       setAllocation(allocationFromState(nextState))
       setResult(null)
+      setRulesVisible(true)
       setGameOverVisible(false)
       setSecondsLeft(90)
       setError(null)
@@ -520,7 +538,7 @@ export default function App() {
   }
 
   const activeProfile = ADVISER_PROFILES[activeAdviser]
-  const isLastRound = gameState.completed
+  const isRunComplete = gameState.completed
   const timerUrgent = !gameState.completed && secondsLeft <= 20
   const timedOut = gameState.game_over_reason === 'time_expired'
   const finalVerdict = gameState.average_model_match >= 82
@@ -528,22 +546,20 @@ export default function App() {
     : gameState.average_model_match >= 62
       ? 'SOLID DISPATCHER'
       : 'NIGHT SHIFT ROOKIE'
-  const runNet = gameState.total_net_revenue || (gameState.currency - 2450)
 
   return (
     <main className="game-shell">
       <header className="topbar">
         <div className="brand-lockup">
-          <div className="brand-mark"><span /> <span /> <span /></div>
+          <div className="brand-mark"><img src="/assets/rat-captain.png" alt="" /></div>
           <div>
             <div className="brand-title">RAT CAB CO.</div>
             <div className="brand-subtitle">NYC · DISPATCH OPERATIONS</div>
           </div>
         </div>
         <div className="header-stat"><span className="stat-label">DAY</span><strong>{gameState.day} / 3</strong></div>
-        <div className="header-stat"><span className="stat-label">ROUND</span><strong>{gameState.round} / 4</strong></div>
-         <div className="header-stat wide"><span className="stat-label">{isDispatching ? 'TIME' : 'WINDOW'}</span><strong>{isDispatching ? simulationTime(gameState.timestamp, dispatchProgress) : `${gameState.time_start} — ${gameState.time_end}`}</strong></div>
-        <div className="header-stat cash"><span className="stat-label">BANK</span><strong>{currency(gameState.currency)}</strong></div>
+        <div className="header-stat wide"><span className="stat-label">WINDOW</span><strong>{`${gameState.time_start} — ${gameState.time_end}`}</strong></div>
+        <div className="header-stat cash"><span className="stat-label">BANK / POINTS</span><strong>{currency(gameState.currency)}</strong></div>
         <div className={`countdown ${timerUrgent ? 'urgent' : ''}`}>
           <span className="stat-label">DECISION IN</span>
           <strong>{gameState.completed ? '— —' : `${String(Math.floor(secondsLeft / 60)).padStart(2, '0')}:${String(secondsLeft % 60).padStart(2, '0')}`}</strong>
@@ -594,14 +610,6 @@ export default function App() {
                <div className="map-key"><span className="key-swatch demand" /> Weekday average <span className="key-swatch fleet" /> Your fleet</div>
               <div className="map-coords">40° 44′ N&nbsp;&nbsp; 73° 59′ W</div>
             </div>
-            {result && !gameOverVisible && (
-              <div className="round-result">
-                <div className="result-kicker">ROUND RESOLVED · {result.time_start} — {result.time_end}</div>
-                <div className="result-main"><strong>{result.net_revenue >= 0 ? '+' : ''}{currency(result.net_revenue)}</strong><span>{result.verdict}</span></div>
-                <div className="result-metrics"><span><b>{result.model_match_percentage}%</b> model match</span><span><b>{result.trips_captured}</b> trips captured</span><span><b>+{result.score_gain}</b> points</span></div>
-                <button type="button" className="result-button" onClick={() => gameState.completed ? setGameOverVisible(false) : setResult(null)}>{gameState.completed ? 'Review final board' : 'Next round'} <span>→</span></button>
-              </div>
-            )}
           </section>
 
           <section className="panel adviser-panel">
@@ -662,28 +670,72 @@ export default function App() {
       <footer className="dispatch-bar">
         <div className="dispatch-state"><span className={`checkmark ${remaining === 0 ? 'complete' : ''}`}>{remaining === 0 ? '✓' : '·'}</span><div><strong>{remaining === 0 ? 'All taxis assigned' : `${remaining} taxis still in depot`}</strong><small>{error ?? 'Target allocation · next block is hidden'}</small></div></div>
         <div className="dispatch-model"><span>MODEL CONFIDENCE</span><b>{Math.round(gameState.model_confidence * 100)}%</b><i style={{ width: `${gameState.model_confidence * 100}%` }} /></div>
-        <button type="button" className="dispatch-button" onClick={() => void dispatch()} disabled={isDispatching || gameState.completed}>{isDispatching ? 'RUNNING…' : isLastRound ? 'RUN COMPLETE' : 'DISPATCH'} <span>→</span></button>
+        <button type="button" className="dispatch-button" onClick={() => void dispatch()} disabled={isDispatching || gameState.completed}>{isDispatching ? 'RUNNING…' : isRunComplete ? 'RUN COMPLETE' : 'DISPATCH'} <span>→</span></button>
         <span className="advance-label">Advance 3 hours</span>
       </footer>
+
+      {result && (
+        <div className="score-update-screen" role="dialog" aria-modal="true" aria-labelledby="score-update-title">
+          <div className="score-update-card">
+            <div className="score-update-topline"><span><i /> BANK UPDATED</span><span>{result.time_start} — {result.time_end}</span></div>
+            <div className="score-update-heading">
+              <span className="eyebrow">THIS WINDOW</span>
+              <strong id="score-update-title">{result.net_revenue >= 0 ? '+' : ''}{currency(result.net_revenue)}</strong>
+              <span>added to bank / points</span>
+            </div>
+            <div className="score-update-breakdown">
+              <div><span>BANK BEFORE</span><b>{currency(result.bank_before)}</b></div>
+              <div><span>MODEL-ADJUSTED FARES</span><b>{currency(result.model_aligned_revenue)}</b><small>{result.model_match_percentage}% model match</small></div>
+              <div><span>TAXI MOVE COST</span><b>{currency(-result.taxi_move_cost)}</b><small>{result.repositioned_taxis} taxis moved</small></div>
+              <div><span>BANK AFTER</span><b>{currency(result.bank_after)}</b><small>current points</small></div>
+            </div>
+            <div className="score-update-note"><span><i /> {result.trips_captured} trips captured · {result.verdict}</span><span>NET = FARES − MOVE COST</span></div>
+            <button type="button" className="score-update-button" onClick={() => setResult(null)}>{gameState.completed ? 'View final results' : 'Next window'} <span>→</span></button>
+          </div>
+        </div>
+      )}
+
+      {rulesVisible && (
+        <div className="rules-screen" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+          <div className="rules-card">
+            <div className="rules-topline"><span><i /> RAT CAB CO. / GAME RULES</span><span>12 WINDOWS · 3 DAYS</span></div>
+            <div className="rules-layout">
+              <div className="rules-content">
+                <span className="eyebrow">HOW TO PLAY</span>
+                <h2 id="rules-title">DISPATCH.<br /><span>GET PAID.</span></h2>
+                <ol className="rules-list">
+                  <li><strong>Assign all 130 taxis.</strong><span>Use <b>+</b> and <b>−</b> to set the distribution across the 12 zones. You must assign every taxi before dispatch.</span></li>
+                  <li><strong>Bank = points.</strong><span>You start with <b>$2,450</b>. Your bank is your score. Each window: bank change = model-adjusted fares − taxi move cost.</span></li>
+                  <li><strong>Match the model.</strong><span>Your allocation is compared with the demand model's predicted distribution. A 100% match pays 100% of captured fares; a 0% match pays 25%; the rest scales linearly.</span></li>
+                  <li><strong>Pay to move taxis.</strong><span>Every taxi moved between zones costs <b>$4.25</b>. The cost is deducted when you dispatch.</span></li>
+                  <li><strong>Play the clock.</strong><span>Dispatch through 12 hidden 3-hour windows over 3 days. You get 90 seconds per decision. The highest final bank wins.</span></li>
+                </ol>
+                <div className="rules-goal"><span className="rules-goal-mark">◎</span><div><b>SCORING FORMULA</b><span>Bank change = captured trips × $21.50 × payout factor − moved taxis × $4.25.</span></div></div>
+              </div>
+            </div>
+            <div className="rules-bottomline"><span><i /> NEXT WINDOW: 08:00 — 11:00</span><button type="button" className="rules-button" onClick={() => setRulesVisible(false)}>Start game <span>→</span></button></div>
+          </div>
+        </div>
+      )}
 
       {gameOverVisible && gameState.completed && (
         <div className="game-over-screen" role="dialog" aria-modal="true" aria-labelledby="game-over-title">
           <div className="game-over-card">
-            <div className="game-over-topline"><span><i /> RAT CAB CO.</span><span>{timedOut ? 'DECISION TIME EXPIRED' : `RUN COMPLETE · ${gameState.rounds_completed} / 12 ROUNDS`}</span></div>
+            <div className="game-over-topline"><span><i /> RAT CAB CO.</span><span>{timedOut ? 'DECISION TIME EXPIRED' : `RUN COMPLETE · ${gameState.turns_completed} / ${gameState.total_turns} WINDOWS`}</span></div>
             <div className="game-over-title-wrap">
               <span className="eyebrow">{timedOut ? 'THE CLOCK RAN OUT' : 'THE CITY HAS STOPPED MOVING'}</span>
               <h2 id="game-over-title"><span>GAME</span> OVER</h2>
-              <p>{timedOut ? `${gameState.rounds_completed} rounds completed` : finalVerdict} <b>·</b> {timedOut ? 'No dispatch was made' : 'Day 3 closeout at 20:00'}</p>
+              <p>{timedOut ? `${gameState.turns_completed} windows completed` : finalVerdict} <b>·</b> {timedOut ? 'No dispatch was made' : 'Day 3 closeout at 20:00'}</p>
             </div>
             <div className="final-score-block">
-              <span className="eyebrow">FINAL SCORE</span>
-              <strong>{shortNumber(gameState.score)}</strong>
-              <span className="score-caption">POINTS EARNED</span>
+              <span className="eyebrow">FINAL BANK / POINTS</span>
+              <strong>{currency(gameState.currency)}</strong>
+              <span className="score-caption">ONE SCORE · ONE LEDGER</span>
             </div>
             <div className="game-over-stats">
-              <div><span>FINAL BANK</span><b>{currency(gameState.currency)}</b><small>{runNet >= 0 ? '+' : ''}{currency(runNet)} net run</small></div>
-              <div><span>MODEL MATCH</span><b>{Math.round(gameState.average_model_match)}%</b><small>best round {gameState.best_model_match}%</small></div>
-              <div><span>TRIPS CAPTURED</span><b>{shortNumber(gameState.total_trips_captured)}</b><small>across {gameState.rounds_completed} turns</small></div>
+              <div><span>TAXI MOVE COST</span><b>{currency(gameState.total_reposition_cost)}</b><small>deducted from bank</small></div>
+              <div><span>MODEL MATCH</span><b>{Math.round(gameState.average_model_match)}%</b><small>best window {gameState.best_model_match}%</small></div>
+              <div><span>TRIPS CAPTURED</span><b>{shortNumber(gameState.total_trips_captured)}</b><small>across {gameState.turns_completed} windows</small></div>
             </div>
             <div className="game-over-bottomline"><span><i /> {timedOut ? 'Run ended before this turn was dispatched' : 'Historical demand replay complete'}</span><span>{apiConnected ? 'API LINKED' : 'LOCAL PREVIEW'}</span></div>
             <div className="game-over-actions">

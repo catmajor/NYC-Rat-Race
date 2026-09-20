@@ -20,7 +20,26 @@ from .models import ZONE_IDS
 
 FLEET_SIZE = 130
 START_DATE = date(2019, 10, 18)
-TOTAL_ROUNDS = 12
+OPERATING_START_HOUR = 8
+TURN_HOURS = 3
+TURNS_PER_DAY = 4
+OPERATING_END_HOUR = OPERATING_START_HOUR + TURN_HOURS * TURNS_PER_DAY
+TOTAL_TURNS = 3 * TURNS_PER_DAY
+
+# Keep the old name as a wire-compatibility alias. The game itself is now
+# described in terms of operating turns/windows, not rounds.
+TOTAL_ROUNDS = TOTAL_TURNS
+STARTING_CURRENCY = 2450.0
+FARE_PER_TRIP = 21.5
+REPOSITION_COST_PER_TAXI = 4.25
+# Currency is earned from the trips the fleet actually serves, but the model
+# read controls how much of that fare is bankable. A bad read still earns the
+# floor for operating a cab; an exact distribution match earns the full fare.
+MIN_MODEL_PAYOUT_FACTOR = 0.25
+# The real feature store contains all city pickups, while the game owns only
+# 130 cabs. Normalize the hidden three-hour opportunity pool to a playable
+# scale while preserving the model's regional demand mix.
+DEMAND_TO_FLEET_RATIO = 1.15
 
 ZONE_LABELS: Dict[str, str] = {
     "harlem": "Harlem",
@@ -90,8 +109,11 @@ NEWS_BY_ROUND = [
 
 
 def _round_time(day: int, round_number: int) -> datetime:
-    offset = (day - 1) * 24 + (round_number - 1) * 3
-    return datetime.combine(START_DATE, time(8, 0)) + timedelta(hours=offset)
+    """Return a playable window start and skip the overnight closed period."""
+    simulation_date = START_DATE + timedelta(days=day - 1)
+    return datetime.combine(simulation_date, time(OPERATING_START_HOUR, 0)) + timedelta(
+        hours=(round_number - 1) * TURN_HOURS,
+    )
 
 
 def _profile_for(round_number: int, day: int) -> Dict[str, object]:
@@ -154,11 +176,32 @@ def _model_allocation(forecast: Mapping[str, float], fleet: int) -> Dict[str, in
     return allocation
 
 
+def _playable_demand(raw_demand: Mapping[str, float], fleet: int) -> Dict[str, int]:
+    """Scale citywide demand into a deterministic opportunity pool for Rat Cab."""
+    total_raw = sum(max(value, 0.0) for value in raw_demand.values()) or 1.0
+    target = max(fleet, round(fleet * DEMAND_TO_FLEET_RATIO))
+    raw = {
+        zone_id: target * max(raw_demand.get(zone_id, 0.0), 0.0) / total_raw
+        for zone_id in ZONE_IDS
+    }
+    demand = {zone_id: math.floor(value) for zone_id, value in raw.items()}
+    remainder = target - sum(demand.values())
+    for zone_id in sorted(ZONE_IDS, key=lambda key: raw[key] - demand[key], reverse=True)[:remainder]:
+        demand[zone_id] += 1
+    return demand
+
+
 def _match_percentage(player: Mapping[str, int], target: Mapping[str, int], fleet: int) -> int:
     if not fleet:
         return 0
     absolute_error = sum(abs(player.get(zone_id, 0) - target.get(zone_id, 0)) for zone_id in ZONE_IDS)
     return max(0, round(100 - (absolute_error / (fleet * 2)) * 100))
+
+
+def _model_payout_factor(match_percentage: int) -> float:
+    """Convert allocation accuracy into a fare multiplier for the bank."""
+    accuracy = max(0.0, min(100.0, float(match_percentage))) / 100.0
+    return round(MIN_MODEL_PAYOUT_FACTOR + (1.0 - MIN_MODEL_PAYOUT_FACTOR) * accuracy, 4)
 
 
 @dataclass
@@ -167,16 +210,19 @@ class GameSession:
 
     day: int = 1
     round_number: int = 1
-    currency: float = 2450.0
-    score: int = 0
+    currency: float = STARTING_CURRENCY
     idle_taxis: Dict[str, int] = field(default_factory=lambda: dict(INITIAL_ALLOCATION))
     completed: bool = False
     rounds_completed: int = 0
     total_trips_captured: int = 0
+    total_trips_missed: int = 0
+    total_gross_revenue: float = 0.0
+    total_reposition_cost: float = 0.0
     total_net_revenue: float = 0.0
     total_model_match: int = 0
     best_model_match: int = 0
     game_over_reason: Optional[str] = None
+    last_result: Optional[Dict[str, object]] = None
 
     def __post_init__(self) -> None:
         self._rng = random.Random(20191018)
@@ -191,19 +237,32 @@ class GameSession:
     def fleet_available(self) -> int:
         return sum(self.idle_taxis.values())
 
+    @property
+    def turn_number(self) -> int:
+        """One-based turn number across all three operating days."""
+        return (self.day - 1) * TURNS_PER_DAY + self.round_number
+
+    @property
+    def score(self) -> float:
+        """Compatibility alias: points are always the current bank balance."""
+        return self.currency
+
     def reset(self) -> None:
         self.day = 1
         self.round_number = 1
-        self.currency = 2450.0
-        self.score = 0
+        self.currency = STARTING_CURRENCY
         self.idle_taxis = dict(INITIAL_ALLOCATION)
         self.completed = False
         self.rounds_completed = 0
         self.total_trips_captured = 0
+        self.total_trips_missed = 0
+        self.total_gross_revenue = 0.0
+        self.total_reposition_cost = 0.0
         self.total_net_revenue = 0.0
         self.total_model_match = 0
         self.best_model_match = 0
         self.game_over_reason = None
+        self.last_result = None
         self._rng = random.Random(20191018)
         self._initialize_world()
 
@@ -274,10 +333,11 @@ class GameSession:
             list(ZONE_IDS),
         )
         baseline = {zone_id: round(forecast[zone_id] * 0.92) for zone_id in ZONE_IDS}
-        actual = {
-            zone_id: max(1, round(forecast[zone_id] * self._rng.uniform(0.88, 1.12)))
+        raw_actual = {
+            zone_id: forecast[zone_id] * self._rng.uniform(0.88, 1.12)
             for zone_id in ZONE_IDS
         }
+        actual = _playable_demand(raw_actual, FLEET_SIZE)
         self._model_confidence = confidence
         self._profile = {
             "baseline": baseline,
@@ -338,6 +398,11 @@ class GameSession:
         return {
             "game_id": "rat-cab-demo",
             "day": self.day,
+            "turn": self.turn_number,
+            "turn_in_day": self.round_number,
+            "total_turns": TOTAL_TURNS,
+            # Legacy aliases for older clients. New clients should use turn
+            # and turn_in_day so the UI does not need a round concept.
             "round": self.round_number,
             "total_rounds": TOTAL_ROUNDS,
             "timestamp": self.timestamp.isoformat(),
@@ -347,9 +412,15 @@ class GameSession:
             "fleet_available": self.fleet_available,
             "assigned": self.fleet_available,
             "currency": round(self.currency, 2),
-            "score": self.score,
+            "score": round(self.currency, 2),
+            "points": round(self.currency, 2),
+            "starting_currency": STARTING_CURRENCY,
+            "turns_completed": self.rounds_completed,
             "rounds_completed": self.rounds_completed,
             "total_trips_captured": self.total_trips_captured,
+            "total_trips_missed": self.total_trips_missed,
+            "total_gross_revenue": round(self.total_gross_revenue, 2),
+            "total_reposition_cost": round(self.total_reposition_cost, 2),
             "total_net_revenue": round(self.total_net_revenue, 2),
             "average_model_match": round(self.total_model_match / self.rounds_completed, 1) if self.rounds_completed else 0.0,
             "best_model_match": self.best_model_match,
@@ -362,6 +433,7 @@ class GameSession:
             "model_confidence": self._model_confidence,
             "data_source": "real-history+onnx",
             "weather_bias": self._weather_bias,
+            "last_result": self.last_result,
             "completed": self.completed,
         }
 
@@ -387,38 +459,68 @@ class GameSession:
         trips_captured = sum(min(normalized[zone_id], int(actual[zone_id])) for zone_id in ZONE_IDS)
         trips_model = sum(min(model_allocation[zone_id], int(actual[zone_id])) for zone_id in ZONE_IDS)
         moved = sum(max(normalized[zone_id] - self.idle_taxis.get(zone_id, 0), 0) for zone_id in ZONE_IDS)
-        reposition_cost = round(moved * 4.25, 2)
-        gross_revenue = round(trips_captured * 21.5, 2)
-        net_revenue = round(gross_revenue - reposition_cost, 2)
-        score_gain = max(0, round(net_revenue + match_percentage * 3))
+        trips_missed = sum(max(int(actual[zone_id]) - normalized[zone_id], 0) for zone_id in ZONE_IDS)
+        total_demand = sum(int(actual[zone_id]) for zone_id in ZONE_IDS)
+        capture_rate = trips_captured / total_demand if total_demand else 0.0
+        reposition_cost = round(moved * REPOSITION_COST_PER_TAXI, 2)
+        gross_revenue = round(trips_captured * FARE_PER_TRIP, 2)
+        model_payout_factor = _model_payout_factor(match_percentage)
+        model_aligned_revenue = round(gross_revenue * model_payout_factor, 2)
+        model_alignment_adjustment = round(model_aligned_revenue - gross_revenue, 2)
+        net_revenue = round(model_aligned_revenue - reposition_cost, 2)
+
+        bank_before = round(self.currency, 2)
         self.currency = round(self.currency + net_revenue, 2)
-        self.score += score_gain
         self.rounds_completed += 1
         self.total_trips_captured += trips_captured
+        self.total_trips_missed += trips_missed
+        self.total_gross_revenue = round(self.total_gross_revenue + gross_revenue, 2)
+        self.total_reposition_cost = round(self.total_reposition_cost + reposition_cost, 2)
         self.total_net_revenue = round(self.total_net_revenue + net_revenue, 2)
         self.total_model_match += match_percentage
         self.best_model_match = max(self.best_model_match, match_percentage)
 
         result = {
             "day": self.day,
+            "turn": self.turn_number,
+            "turn_in_day": self.round_number,
             "round": self.round_number,
             "time_start": self.timestamp.strftime("%H:%M"),
             "time_end": (self.timestamp + timedelta(hours=3)).strftime("%H:%M"),
             "gross_revenue": gross_revenue,
+            "model_payout_factor": model_payout_factor,
+            "model_aligned_revenue": model_aligned_revenue,
+            "model_alignment_adjustment": model_alignment_adjustment,
             "reposition_cost": reposition_cost,
+            "taxi_move_cost": reposition_cost,
             "net_revenue": net_revenue,
-            "score_gain": score_gain,
-            "total_score": self.score,
+            "bank_before": bank_before,
+            "bank_change": net_revenue,
+            "bank_after": self.currency,
+            # Points are the bank. These aliases remain in the result schema
+            # so older clients can render the same single ledger.
+            "score_gain": net_revenue,
+            "total_score": self.currency,
             "currency": self.currency,
             "trips_captured": trips_captured,
+            "trips_missed": trips_missed,
+            "capture_rate": round(capture_rate, 4),
             "trips_model": trips_model,
+            "repositioned_taxis": moved,
             "model_match_percentage": match_percentage,
+            "bank_breakdown": {
+                "fare_revenue": gross_revenue,
+                "model_payout_factor": model_payout_factor,
+                "model_aligned_revenue": model_aligned_revenue,
+                "taxi_move_cost": reposition_cost,
+                "bank_change": net_revenue,
+            },
             "model_allocation": model_allocation,
             "actual_demand": actual,
             "verdict": "Strong read" if match_percentage >= 80 else "Mixed signal" if match_percentage >= 58 else "Missed the pulse",
         }
 
-        if self.round_number == 4:
+        if self.round_number == TURNS_PER_DAY:
             if self.day == 3:
                 self.completed = True
                 self.game_over_reason = "turns_complete"
@@ -428,6 +530,7 @@ class GameSession:
         else:
             self.round_number += 1
         self.idle_taxis = normalized
+        self.last_result = result
         if not self.completed:
             self._advance_weather()
             self._refresh_profile()

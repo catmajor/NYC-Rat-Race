@@ -39,13 +39,27 @@ class AdviserRequest(BaseModel):
 
 class GameAdvanceRequest(BaseModel):
     day: int = Field(ge=1, le=3)
-    round: int = Field(ge=1, le=4)
     allocation: Dict[str, int]
+    # ``turn`` is the public name. Accept ``round`` for older clients during
+    # the transition away from the round-based UI.
+    turn: Optional[int] = Field(default=None, ge=1, le=4)
+    round: Optional[int] = Field(default=None, ge=1, le=4)
 
 
 class GameTimeoutRequest(BaseModel):
     day: int = Field(ge=1, le=3)
-    round: int = Field(ge=1, le=4)
+    turn: Optional[int] = Field(default=None, ge=1, le=4)
+    round: Optional[int] = Field(default=None, ge=1, le=4)
+
+
+def _requested_turn(turn: Optional[int], legacy_round: Optional[int]) -> int:
+    """Resolve the new turn field while keeping old clients compatible."""
+    if turn is not None and legacy_round is not None and turn != legacy_round:
+        raise HTTPException(status_code=422, detail="turn and round must refer to the same window")
+    requested = turn if turn is not None else legacy_round
+    if requested is None:
+        raise HTTPException(status_code=422, detail="turn is required")
+    return requested
 
 
 # The Don is intentionally not listed here yet: the canonical MVP spec makes
@@ -98,9 +112,21 @@ ADVISER_METADATA = {
 def _game_state() -> Dict[str, object]:
     """Return the game state with store-derived regional context."""
     state = SESSION.state()
-    means = real_weekday_mean(SESSION.timestamp)
     zones = state["zones"]
     assert isinstance(zones, dict)
+    try:
+        means = real_weekday_mean(SESSION.timestamp)
+        state["historic_mean_source"] = "tlc-weekday-store"
+    except RuntimeError:
+        # The ONNX game is playable without the optional TLC pickup parquet.
+        # Keep the same state contract and use the current point-in-time
+        # baseline until the store is available.
+        means = {
+            zone_id: float(zone["baseline_demand"])
+            for zone_id, zone in zones.items()
+            if isinstance(zone, dict)
+        }
+        state["historic_mean_source"] = "model-baseline-fallback"
     for zone_id in ZONE_IDS:
         zone = zones[zone_id]
         assert isinstance(zone, dict)
@@ -262,8 +288,9 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
     @app.post("/api/game/advance", tags=["game"])
     def advance_game(request: GameAdvanceRequest) -> Dict[str, object]:
         """Score one allocation, hide the outcome, and move to the next turn."""
-        if request.day != SESSION.day or request.round != SESSION.round_number:
-            raise HTTPException(status_code=409, detail="This round is no longer current")
+        requested_turn = _requested_turn(request.turn, request.round)
+        if request.day != SESSION.day or requested_turn != SESSION.round_number:
+            raise HTTPException(status_code=409, detail="This window is no longer current")
         try:
             result = SESSION.advance(request.allocation)
         except ValueError as exc:
@@ -273,8 +300,9 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
     @app.post("/api/game/timeout", tags=["game"])
     def timeout_game(request: GameTimeoutRequest) -> Dict[str, object]:
         """End the current run when the player misses the decision window."""
-        if request.day != SESSION.day or request.round != SESSION.round_number:
-            raise HTTPException(status_code=409, detail="This round is no longer current")
+        requested_turn = _requested_turn(request.turn, request.round)
+        if request.day != SESSION.day or requested_turn != SESSION.round_number:
+            raise HTTPException(status_code=409, detail="This window is no longer current")
         try:
             SESSION.timeout()
         except ValueError as exc:

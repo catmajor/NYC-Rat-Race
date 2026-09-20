@@ -622,19 +622,44 @@ export default function NycMap({
       })
     }
 
-    const makeFleetLayer = (): ScenegraphLayer | null => {
-      const data = dispatchRatsRef.current.length
-        ? dispatchFleetData(performance.now())
-        : restingFleetDataRef.current.length
-          ? restingFleetDataRef.current
-        : Object.entries(regionCentroidsRef.current).flatMap(([zoneId, center]) => {
-          const count = Math.max(0, Math.floor(allocationRef.current[zoneId] ?? 0))
-          return Array.from({ length: count }, (_, index) => ({
-            lon: center.lon + ((index % 10) - 4.5) * 0.0009,
-            lat: center.lat + (Math.floor(index / 10) - 2) * 0.0008,
-            heading: (index * 47 + zoneId.length * 11) % 360,
-          }))
-        })
+    const makeFleetData = (now: number): FleetPosition[] => {
+      if (dispatchRatsRef.current.length) return dispatchFleetData(now)
+      if (restingFleetDataRef.current.length) return restingFleetDataRef.current
+      return Object.entries(regionCentroidsRef.current).flatMap(([zoneId, center]) => {
+        const count = Math.max(0, Math.floor(allocationRef.current[zoneId] ?? 0))
+        return Array.from({ length: count }, (_, index) => ({
+          lon: center.lon + ((index % 10) - 4.5) * 0.0009,
+          lat: center.lat + (Math.floor(index / 10) - 2) * 0.0008,
+          zoneId,
+          heading: (index * 47 + zoneId.length * 11) % 360,
+        }))
+      })
+    }
+
+    const makeFleetGlowLayers = (data: FleetPosition[]): Layer[] => {
+      if (!data.length) return []
+      const pulse = 0.92 + Math.sin(performance.now() / 260) * 0.08
+      const glow = (id: string, scale: number, alpha: number) => new ScatterplotLayer<FleetPosition>({
+        id,
+        data,
+        getPosition: (d) => [d.lon, d.lat],
+        getRadius: () => RAT_SIZE_SCALE * scale * pulse,
+        radiusUnits: 'meters',
+        radiusMinPixels: 2,
+        getFillColor: () => [244, 192, 22, alpha],
+        stroked: false,
+        pickable: false,
+        // Keep the halo visible around a rat even when it crosses a building.
+        parameters: { depthCompare: 'always', depthWriteEnabled: false },
+      })
+      return [
+        glow('fleet-rat-glow-outer', 4.2, 18),
+        glow('fleet-rat-glow-mid', 2.7, 32),
+        glow('fleet-rat-glow-core', 1.5, 56),
+      ]
+    }
+
+    const makeFleetLayer = (data: FleetPosition[]): ScenegraphLayer | null => {
       if (!data.length) return null
       return new ScenegraphLayer({
         id: 'fleet-rats',
@@ -1098,13 +1123,15 @@ switch (ev.event) {
       // Re-run the weather outline accessors at a modest cadence. Without an
       // update trigger, Date.now() inside a deck accessor is not observable.
       const weatherPulseTick = Math.floor(performance.now() / 180)
+      const fleetData = makeFleetData(performance.now())
       // Weather FX go AFTER buildings/regions: translucent geometry still
       // writes depth and depth-culls anything painted behind it, so if the
       // clouds render first they silently hide building extrusion and region
       // outlines that fall underneath. Drawn last, they just blend on top.
       return [
+        ...makeFleetGlowLayers(fleetData),
         makeRatLayer(pose),
-        makeFleetLayer(),
+        makeFleetLayer(fleetData),
         makeFootstepsLayer(),
         makeBuildingsLayer(),
         // A broad, translucent pulse sits underneath the crisp event border.
