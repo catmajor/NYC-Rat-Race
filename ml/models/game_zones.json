@@ -12,26 +12,26 @@
   ],
   "zones": [
     {
-      "centroid_lat": 40.822729785489045,
-      "centroid_lon": -73.94035258153365,
+      "centroid_lat": 40.81680947478255,
+      "centroid_lon": -73.94280967278557,
       "display_name": "Harlem",
       "game_zone": "harlem"
     },
     {
-      "centroid_lat": 40.782627816632335,
-      "centroid_lon": -73.97267861596723,
+      "centroid_lat": 40.78676380350536,
+      "centroid_lon": -73.9763895306011,
       "display_name": "Upper West Side",
       "game_zone": "upper_west"
     },
     {
-      "centroid_lat": 40.768189251393046,
-      "centroid_lon": -73.95795856914233,
+      "centroid_lat": 40.7659567225637,
+      "centroid_lon": -73.960578885686,
       "display_name": "Upper East Side",
       "game_zone": "upper_east"
     },
     {
-      "centroid_lat": 40.749961818634304,
-      "centroid_lon": -73.98892466585225,
+      "centroid_lat": 40.75053498204716,
+      "centroid_lon": -73.98967296950914,
       "display_name": "Midtown",
       "game_zone": "midtown"
     },
@@ -42,28 +42,46 @@
       "game_zone": "downtown"
     },
     {
-      "centroid_lat": 40.68515769969557,
-      "centroid_lon": -73.93382157688333,
+      "centroid_lat": 40.67787169045595,
+      "centroid_lon": -73.93703966050003,
       "display_name": "North Brooklyn",
       "game_zone": "north_brooklyn"
     },
     {
-      "centroid_lat": 40.62285331034179,
-      "centroid_lon": -73.95888346399539,
+      "centroid_lat": 40.62043066062703,
+      "centroid_lon": -73.95963605272973,
       "display_name": "South Brooklyn",
       "game_zone": "south_brooklyn"
     },
     {
-      "centroid_lat": 40.74625941606034,
-      "centroid_lon": -73.89113789947781,
+      "centroid_lat": 40.73906129526827,
+      "centroid_lon": -73.8563080139,
       "display_name": "Queens West",
       "game_zone": "queens_west"
     },
     {
-      "centroid_lat": 40.664634531631506,
-      "centroid_lon": -73.7985743724969,
+      "centroid_lat": 40.6782115466695,
+      "centroid_lon": -73.78525059211051,
+      "display_name": "Queens East",
+      "game_zone": "queens_east"
+    },
+    {
+      "centroid_lat": 40.6717616119443,
+      "centroid_lon": -73.89531449876925,
       "display_name": "Airports",
       "game_zone": "airports"
+    },
+    {
+      "centroid_lat": 40.852620509329356,
+      "centroid_lon": -73.86652737098792,
+      "display_name": "The Bronx",
+      "game_zone": "bronx"
+    },
+    {
+      "centroid_lat": 40.580847780463145,
+      "centroid_lon": -74.15343804208095,
+      "display_name": "Staten Island",
+      "game_zone": "staten_island"
     }
   ]
 }

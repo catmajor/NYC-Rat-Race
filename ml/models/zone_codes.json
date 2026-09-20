@@ -1,24 +1,30 @@
 {
   "display_names": {
     "airports": "Airports",
+    "bronx": "The Bronx",
     "downtown": "Downtown",
     "harlem": "Harlem",
     "midtown": "Midtown",
     "north_brooklyn": "North Brooklyn",
+    "queens_east": "Queens East",
     "queens_west": "Queens West",
     "south_brooklyn": "South Brooklyn",
+    "staten_island": "Staten Island",
     "upper_east": "Upper East Side",
     "upper_west": "Upper West Side"
   },
   "zones": {
     "airports": 0,
-    "downtown": 1,
-    "harlem": 2,
-    "midtown": 3,
-    "north_brooklyn": 4,
-    "queens_west": 5,
-    "south_brooklyn": 6,
-    "upper_east": 7,
-    "upper_west": 8
+    "bronx": 1,
+    "downtown": 2,
+    "harlem": 3,
+    "midtown": 4,
+    "north_brooklyn": 5,
+    "queens_east": 6,
+    "queens_west": 7,
+    "south_brooklyn": 8,
+    "staten_island": 9,
+    "upper_east": 10,
+    "upper_west": 11
   }
 }

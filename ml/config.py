@@ -73,7 +73,10 @@ GAME_ZONES: dict[str, str] = {
     "north_brooklyn": "North Brooklyn",
     "south_brooklyn": "South Brooklyn",
     "queens_west": "Queens West",
+    "queens_east": "Queens East",
     "airports": "Airports",
+    "bronx": "The Bronx",
+    "staten_island": "Staten Island",
 }
 
 # Historical replay window used to build the feature store / train the model.
