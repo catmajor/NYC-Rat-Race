@@ -4,7 +4,7 @@
  * Writes into ./public:
  *   rat.glb                  - copied from the repo root
  *   data/taxi_zones.geojson  - TLC taxi-zone shapefile (d37ci6vzurychx.cloudfront.net)
- *   data/nyc_roads.geojson   - Manhattan street network from OpenStreetMap (Overpass)
+ *   data/nyc_roads.geojson   - NYC street network from OpenStreetMap (Overpass)
  *
  * Run once from the frontend directory:  node scripts/fetch-nyc-data.mjs
  */
@@ -39,24 +39,27 @@ async function fetchBuffer(url, options = {}, retries = 4) {
   }
 }
 
-// Approximate Manhattan bbox (a bit padded over the island).
-const BBOX = { south: 40.7, west: -74.03, north: 40.9, east: -73.9 }
-const HIGHWAY_RE = '(motorway|trunk|primary|secondary|tertiary|residential)'
+// Citywide bbox covering all twelve game regions.
+// Citywide bbox covering all twelve game regions, including Staten Island and
+// the airport zones. Keep the road classes to drivable streets so the graph
+// stays useful for taxi movement without pulling in footways and paths.
+const BBOX = { south: 40.48, west: -74.28, north: 40.93, east: -73.65 }
+const HIGHWAY_RE = '(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)'
 const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.openstreetmap.ru/api/interpreter',
   'https://overpass.osm.jp/api/interpreter',
 ]
+const BBBIKE_ROADS_URL = 'https://download.bbbike.org/osm/bbbike/NewYork/NewYork.osm.pbf'
 
-function overpassQuery() {
-  const { south, west, north, east } = BBOX
+function overpassQuery({ south, west, north, east }) {
   const bbox = `(${south},${west},${north},${east})`
-  // Named roads of all classes keep the network dense; plus unnamed
-  // motorway/trunk/primary/secondary/tertiary so it stays connected.
-  const a = `way["highway"~"^(${HIGHWAY_RE})$"]["name"]${bbox};`
-  const b = `way["highway"~"^(motorway|trunk|primary|secondary|tertiary)$"][!"name"]${bbox};`
-  return `[out:json][timeout:180][maxsize:536870912];(${a}${b});out geom;`
+  // Include named and unnamed drivable ways. Unnamed local connectors are
+  // important in the outer boroughs, where omitting them leaves isolated
+  // fragments and forces routeBetween() to stop far from its destination.
+  const roads = `way["highway"~"^${HIGHWAY_RE}$"]${bbox};`
+  return `[out:json][timeout:120][maxsize:536870912];(${roads});out geom;`
 }
 
 // curl.exe streams the response to a file, avoiding node's fetch fingerprint
@@ -65,8 +68,36 @@ function curlToFile(url, outfile, body) {
   return new Promise((resolve, reject) => {
     execFile(
       'curl',
-      ['-s', '-A', 'Mozilla/5.0 nyc-rat-race/setup', '--data', `data=${encodeURIComponent(body)}`, '-o', outfile, url],
-      { timeout: 300000 },
+      ['-sS', '-f', '--max-time', '150', '-A', 'Mozilla/5.0 nyc-rat-race/setup', '--data', `data=${encodeURIComponent(body)}`, '-o', outfile, url],
+      { timeout: 180000 },
+      (err) => {
+        if (err) return reject(err)
+        resolve()
+      },
+    )
+  })
+}
+
+function downloadFile(url, outfile) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'curl',
+      ['-L', '--fail', '--retry', '3', '-A', 'Mozilla/5.0 nyc-rat-race/setup', '-o', outfile, url],
+      { timeout: 900000 },
+      (err) => {
+        if (err) return reject(err)
+        resolve()
+      },
+    )
+  })
+}
+
+function convertBbbikeRoads(input, output) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'python',
+      [path.join(root, 'scripts', 'convert-bbbike-roads.py'), input, output],
+      { timeout: 900000 },
       (err) => {
         if (err) return reject(err)
         resolve()
@@ -79,7 +110,7 @@ async function fetchRoadsRaw() {
   // Prefer a local cache of a previous Overpass response so a flaky network
   // never bricks a rebuild. Save fresh downloads to scripts/cache/.
   const cacheDir = path.join(root, 'scripts', 'cache')
-  const cacheFile = path.join(cacheDir, 'overpass_manhattan.json')
+  const cacheFile = path.join(cacheDir, 'overpass_nyc.json')
   await mkdir(cacheDir, { recursive: true })
   try {
     const cached = await readFile(cacheFile, 'utf8')
@@ -91,37 +122,54 @@ async function fetchRoadsRaw() {
   } catch {
     /* no cache yet */
   }
-  const q = overpassQuery()
-  const tmp = path.join(os.tmpdir(), 'nyc_rat_race_roads.json')
-  for (let round = 1; round <= 5; round++) {
-    for (const ep of OVERPASS_MIRRORS) {
-      try {
-        await curlToFile(ep, tmp, q)
-        const txt = await readFile(tmp, 'utf8')
-        if (txt.length > 0 && txt[0] === '{') {
-          const parsed = JSON.parse(txt)
-          if (Array.isArray(parsed.elements)) {
-            console.log(`  roads fetched from ${ep} (round ${round}): ${parsed.elements.length} ways`)
-            // Save for next time so subsequent runs skip Overpass entirely.
-            try {
-              await copyFile(tmp, path.join(cacheDir, 'overpass_manhattan.json'))
-            } catch {
-              /* caching is best-effort */
+  // Split the citywide request into tiles. A single NYC-wide Overpass query is
+  // large enough to time out or be rejected even when the mirror is healthy.
+  const rows = 3
+  const cols = 3
+  const elements = new Map()
+  const tmp = path.join(os.tmpdir(), 'nyc_rat_race_roads_tile.json')
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const tile = {
+        south: BBOX.south + (BBOX.north - BBOX.south) * row / rows,
+        north: BBOX.south + (BBOX.north - BBOX.south) * (row + 1) / rows,
+        west: BBOX.west + (BBOX.east - BBOX.west) * col / cols,
+        east: BBOX.west + (BBOX.east - BBOX.west) * (col + 1) / cols,
+      }
+      let fetched = false
+      for (let round = 1; round <= 2 && !fetched; round++) {
+        for (const ep of OVERPASS_MIRRORS) {
+          try {
+            await curlToFile(ep, tmp, overpassQuery(tile))
+            const parsed = JSON.parse(await readFile(tmp, 'utf8'))
+            if (!Array.isArray(parsed.elements)) throw new Error('missing elements')
+            for (const element of parsed.elements) {
+              if (element.type === 'way' && element.id !== undefined) elements.set(`${element.type}/${element.id}`, element)
             }
-            return parsed
+            console.log(`  tile ${row + 1}/${rows},${col + 1}/${cols}: ${parsed.elements.length} ways from ${ep}`)
+            fetched = true
+            break
+          } catch (err) {
+            console.log(`  tile ${row + 1}/${rows},${col + 1}/${cols} ${ep} (round ${round}): ${err.message}`)
           }
         }
-        console.log(`  ${ep} (round ${round}): no usable payload`)
-      } catch (err) {
-        console.log(`  ${ep} (round ${round}): ${err.message}`)
+        if (!fetched) await sleep(2000)
       }
+      if (!fetched) console.warn(`  tile ${row + 1}/${rows},${col + 1}/${cols} unavailable; continuing`)
     }
-    await sleep(3000)
   }
-  return null
+  if (!elements.size) return null
+  const parsed = { version: 0.6, generator: 'nyc-rat-race', elements: [...elements.values()] }
+  try {
+    await writeFile(cacheFile, JSON.stringify(parsed), 'utf8')
+  } catch {
+    /* caching is best-effort */
+  }
+  console.log(`  roads fetched citywide: ${parsed.elements.length} unique ways`)
+  return parsed
 }
 
-// Deterministic fallback: a stylized Manhattan grid so the demo still has
+// Deterministic fallback: a stylized citywide grid so the demo still has
 // streets even if every Overpass instance is down. It is not OSM data.
 function generatedGrid() {
   const { south, west, north, east } = BBOX
@@ -240,15 +288,19 @@ async function main() {
   await writeFile(path.join(dataDir, 'taxi_zones.geojson'), JSON.stringify(zones), 'utf8')
   console.log(`taxi_zones.geojson done: ${zones.features.length} zones`)
 
-  // 3. roads (OpenStreetMap via Overpass, with a procedural fallback)
-  console.log('fetching roads (Overpass)...')
-  const overpass = await fetchRoadsRaw()
-  const roads = overpass
-    ? roadsToGeojson(overpass.elements)
-    : generatedGrid()
-  if (!overpass) console.warn('  all Overpass instances failed; using generated Manhattan grid (no OSM roads)')
-  await writeFile(path.join(dataDir, 'nyc_roads.geojson'), JSON.stringify(roads), 'utf8')
-  console.log(`nyc_roads.geojson done: ${roads.features.length} way features`)
+  // 3. roads: BBBike's NYC PBF is a stable citywide extract. It avoids the
+  // rate limits, query-size failures, and regional gaps of Overpass mirrors.
+  console.log('fetching roads (BBBike NYC PBF)...')
+  const pbf = path.join(os.tmpdir(), 'nyc-rat-race-NewYork.osm.pbf')
+  try {
+    await access(pbf)
+    console.log('  using cached BBBike PBF')
+  } catch {
+    await downloadFile(BBBIKE_ROADS_URL, pbf)
+  }
+  const roadsPath = path.join(dataDir, 'nyc_roads.geojson')
+  await convertBbbikeRoads(pbf, roadsPath)
+  console.log('nyc_roads.geojson done')
 
   console.log('\nAll data written. Commit public/rat.glb and public/data/.')
 }
