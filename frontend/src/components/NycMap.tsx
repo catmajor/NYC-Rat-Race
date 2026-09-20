@@ -5,14 +5,14 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { LightingEffect, AmbientLight, DirectionalLight, type Layer } from '@deck.gl/core'
 import { GeoJsonLayer, LineLayer, PolygonLayer, ScatterplotLayer } from '@deck.gl/layers'
 import { ScenegraphLayer } from '@deck.gl/mesh-layers'
-import { RatRouter } from '../lib/ratRouter'
+import { RatRouter, type RoadPoint } from '../lib/ratRouter'
 import { polygonCentroid, type TaxiZone } from '../lib/zones'
 import { getActiveWeatherEvent, type WeatherConfig, type WeatherEvent } from '../lib/weatherEvents'
 
 // Tune-by-eye constants (visual calibration happens in the browser):
 export const RAT_SIZE_SCALE = 50// rat.glb is ~1 world unit; this makes the rat
 // a ~1.5 km-wide "giant rat taxi" so it is visible at city zoom (~57 m/px at z11.4).
-export const RAT_SPEED_MPS = 55 // playful "taxi rat" ground speed
+export const RAT_SPEED_MPS = 800 // fast dispatch speed across the road graph
 
 // Footstep-trail feel: dots dropped at the rat's position that fade away.
 export const FOOTSTEP_DROP_MS = 250 // interval between new dots
@@ -212,22 +212,119 @@ interface RatPose {
   heading: number
 }
 
+export interface DispatchRun {
+  id: number
+  allocation: Record<string, number>
+}
+
+interface DispatchRat {
+  zoneId: string
+  routes: Array<RoadPoint[]>
+}
+
+interface FleetPosition extends RoadPoint {
+  zoneId: string
+  heading: number
+}
+
+function geometryPoints(geometry: GeoJSON.Geometry): Array<[number, number]> {
+  const cached = GEOMETRY_POINTS_CACHE.get(geometry as object)
+  if (cached) return cached
+  const points: Array<[number, number]> = []
+  const visit = (value: unknown) => {
+    if (!Array.isArray(value)) return
+    if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
+      points.push([value[0], value[1]])
+      return
+    }
+    value.forEach(visit)
+  }
+  visit((geometry as any).coordinates)
+  GEOMETRY_POINTS_CACHE.set(geometry as object, points)
+  return points
+}
+
+const GEOMETRY_POINTS_CACHE = new WeakMap<object, Array<[number, number]>>()
+const GEOMETRY_BOUNDS_CACHE = new WeakMap<object, [number, number, number, number]>()
+
+function cachedGeometryBounds(geometry: GeoJSON.Geometry): [number, number, number, number] {
+  const cached = GEOMETRY_BOUNDS_CACHE.get(geometry as object)
+  if (cached) return cached
+  const points = geometryPoints(geometry)
+  const bounds: [number, number, number, number] = [
+    Math.min(...points.map(([lon]) => lon)),
+    Math.max(...points.map(([lon]) => lon)),
+    Math.min(...points.map(([, lat]) => lat)),
+    Math.max(...points.map(([, lat]) => lat)),
+  ]
+  GEOMETRY_BOUNDS_CACHE.set(geometry as object, bounds)
+  return bounds
+}
+
+function pointInRing(point: [number, number], ring: Array<[number, number]>): boolean {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [x, y] = ring[i]
+    const [previousX, previousY] = ring[j]
+    if ((y > point[1]) !== (previousY > point[1]) && point[0] < (previousX - x) * (point[1] - y) / (previousY - y) + x) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+function pointInGeometry(point: [number, number], geometry: GeoJSON.Geometry): boolean {
+  const [minLon, maxLon, minLat, maxLat] = cachedGeometryBounds(geometry)
+  if (point[0] < minLon || point[0] > maxLon || point[1] < minLat || point[1] > maxLat) return false
+  const coordinates = (geometry as any).coordinates
+  if (geometry.type === 'Polygon') {
+    return pointInRing(point, coordinates[0]) && !coordinates.slice(1).some((ring: Array<[number, number]>) => pointInRing(point, ring))
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return coordinates.some((polygon: Array<Array<[number, number]>>) => pointInRing(point, polygon[0]) && !polygon.slice(1).some((ring) => pointInRing(point, ring)))
+  }
+  return false
+}
+
+function pointInRegion(geometry: GeoJSON.Geometry | undefined, seed: number): [number, number] | null {
+  if (!geometry) return null
+  const points = geometryPoints(geometry)
+  if (!points.length) return null
+  const minLon = Math.min(...points.map(([lon]) => lon))
+  const maxLon = Math.max(...points.map(([lon]) => lon))
+  const minLat = Math.min(...points.map(([, lat]) => lat))
+  const maxLat = Math.max(...points.map(([, lat]) => lat))
+  const random = mulberry32(seed)
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const point: [number, number] = [
+      minLon + random() * (maxLon - minLon),
+      minLat + random() * (maxLat - minLat),
+    ]
+    if (pointInGeometry(point, geometry)) return point
+  }
+  return points[Math.floor(random() * points.length)]
+}
+
 export interface NycMapProps {
   allocationByZone?: Record<string, number>
   selectedZone?: string | null
   onZoneSelect?: (zoneId: string) => void
+  dispatchRun?: DispatchRun | null
 }
 
 export default function NycMap({
   allocationByZone = {},
   selectedZone = null,
   onZoneSelect,
+  dispatchRun = null,
 }: NycMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<MapboxOverlay | null>(null)
   const routerRef = useRef<RatRouter | null>(null)
   const zonesRef = useRef<TaxiZone[]>([])
   const regionCentroidsRef = useRef<Record<string, { lon: number; lat: number }>>({})
+  const regionGeometryRef = useRef<Record<string, GeoJSON.Geometry>>({})
+  const airportGeometryRef = useRef<GeoJSON.Geometry | null>(null)
   const regionsLayerRef = useRef<GeoJsonLayer | null>(null)
   // Per-region weather instructions; tint/badge accessors read it live so the
   // layers refresh as soon as the (initially static) config loads.
@@ -244,6 +341,11 @@ export default function NycMap({
   const allocationRef = useRef(allocationByZone)
   const selectedZoneRef = useRef(selectedZone)
   const onZoneSelectRef = useRef(onZoneSelect)
+  const dispatchRunRef = useRef(dispatchRun)
+  const dispatchAnimationIdRef = useRef<number | null>(null)
+  const dispatchAnimationStartedAtRef = useRef<number | null>(null)
+  const dispatchRatsRef = useRef<DispatchRat[]>([])
+  const restingFleetDataRef = useRef<FleetPosition[]>([])
 
   const [hovered, setHovered] = useState<string | null>(null)
 
@@ -251,7 +353,8 @@ export default function NycMap({
     allocationRef.current = allocationByZone
     selectedZoneRef.current = selectedZone
     onZoneSelectRef.current = onZoneSelect
-  }, [allocationByZone, onZoneSelect, selectedZone])
+    dispatchRunRef.current = dispatchRun
+  }, [allocationByZone, dispatchRun, onZoneSelect, selectedZone])
 
   useEffect(() => {
     const container = containerRef.current
@@ -382,6 +485,86 @@ export default function NycMap({
       }
     }
 
+    const makeDispatchRats = (run: DispatchRun): DispatchRat[] => {
+      const rats: DispatchRat[] = []
+      const targetsByZone = new Map<string, RoadPoint[]>()
+      const availableParked = [...restingFleetDataRef.current]
+      for (const [zoneId, allocation] of Object.entries(run.allocation)) {
+        if (allocation <= 0) continue
+        const count = Math.max(0, Math.floor(allocation))
+        const center = regionCentroidsRef.current[zoneId]
+        if (!center) continue
+        let targets = targetsByZone.get(zoneId)
+        const regionGeometry = regionGeometryRef.current[zoneId]
+        const destinationGeometry = zoneId === 'airports'
+          ? airportGeometryRef.current ?? regionGeometry
+          : regionGeometry
+        if (!targets) {
+          const seed = hashStr(`${run.id}:${zoneId}`)
+          const fallback: RoadPoint = { lon: center.lon, lat: center.lat }
+          targets = []
+          for (let targetIndex = 0; targetIndex < 6; targetIndex += 1) {
+            const point = pointInRegion(destinationGeometry, seed + targetIndex + 1)
+            const target: RoadPoint = point
+              ? { lon: point[0], lat: point[1] }
+              : fallback
+            targets.push(target)
+          }
+          targetsByZone.set(zoneId, targets)
+        }
+        for (let index = 0; index < count; index += 1) {
+          const seed = hashStr(`${run.id}:${zoneId}:${index}`)
+          const fallback: RoadPoint = { lon: center.lon, lat: center.lat }
+          const preferredIndex = availableParked.findIndex((rat) => rat.zoneId === zoneId)
+          const parkedPosition = availableParked.splice(preferredIndex >= 0 ? preferredIndex : 0, 1)[0]
+          const randomStart = pointInRegion(destinationGeometry, seed)
+          const origin: RoadPoint = parkedPosition
+            ? { lon: parkedPosition.lon, lat: parkedPosition.lat }
+            : randomStart
+              ? { lon: randomStart[0], lat: randomStart[1] }
+              : fallback
+          const insideDestination = Boolean(destinationGeometry && pointInGeometry([origin.lon, origin.lat], destinationGeometry))
+          const routes: Array<RoadPoint[]> = []
+          let current = origin
+          if (!insideDestination) {
+            const target = targets[index % Math.max(targets.length, 1)] ?? fallback
+            const approach = routerRef.current?.aStarRoute(current, target) ?? [current, target]
+            routes.push(approach)
+            current = approach[approach.length - 1] ?? target
+          }
+          for (let segment = routes.length; segment < 6; segment += 1) {
+            const walk = routerRef.current?.boundedRandomWalk(
+              current,
+              (point) => Boolean(destinationGeometry && pointInGeometry([point.lon, point.lat], destinationGeometry)),
+              18,
+              seed + segment,
+            ) ?? [current]
+            routes.push(walk)
+            current = walk[walk.length - 1] ?? current
+          }
+          rats.push({ zoneId, routes })
+        }
+      }
+      return rats
+    }
+
+    const dispatchFleetData = (now: number): FleetPosition[] => {
+      const elapsedSeconds = Math.max(0, now - (dispatchAnimationStartedAtRef.current ?? now)) / 1000
+      return dispatchRatsRef.current.map((rat) => {
+        let remainingDistance = elapsedSeconds * RAT_SPEED_MPS
+        let sampled = RatRouter.pointAlongRouteMeters(rat.routes[rat.routes.length - 1], RatRouter.routeLength(rat.routes[rat.routes.length - 1]))
+        for (const route of rat.routes) {
+          const length = RatRouter.routeLength(route)
+          if (remainingDistance <= length) {
+            sampled = RatRouter.pointAlongRouteMeters(route, remainingDistance)
+            break
+          }
+          remainingDistance -= length
+        }
+        return { ...sampled.point, zoneId: rat.zoneId, heading: (sampled.headingDeg + 360) % 360 }
+      })
+    }
+
     let rafId = 0
     let last = performance.now()
     let lastProps = 0
@@ -405,14 +588,18 @@ export default function NycMap({
     }
 
     const makeFleetLayer = (): ScenegraphLayer | null => {
-      const data = Object.entries(regionCentroidsRef.current).flatMap(([zoneId, center]) => {
-        const count = Math.min(7, Math.ceil((allocationRef.current[zoneId] ?? 0) / 5))
-        return Array.from({ length: count }, (_, index) => ({
-          lon: center.lon + ((index % 3) - 1) * 0.0032,
-          lat: center.lat + (Math.floor(index / 3) - 1) * 0.0023,
-          heading: (index * 47 + zoneId.length * 11) % 360,
-        }))
-      })
+      const data = dispatchRatsRef.current.length
+        ? dispatchFleetData(performance.now())
+        : restingFleetDataRef.current.length
+          ? restingFleetDataRef.current
+        : Object.entries(regionCentroidsRef.current).flatMap(([zoneId, center]) => {
+          const count = Math.max(0, Math.floor(allocationRef.current[zoneId] ?? 0))
+          return Array.from({ length: count }, (_, index) => ({
+            lon: center.lon + ((index % 10) - 4.5) * 0.0009,
+            lat: center.lat + (Math.floor(index / 10) - 2) * 0.0008,
+            heading: (index * 47 + zoneId.length * 11) % 360,
+          }))
+        })
       if (!data.length) return null
       return new ScenegraphLayer({
         id: 'fleet-rats',
@@ -863,6 +1050,17 @@ switch (ev.event) {
       last = now
       const router = routerRef.current
       if (router) {
+        const dispatchRun = dispatchRunRef.current
+        if (dispatchRun && dispatchAnimationIdRef.current !== dispatchRun.id) {
+          dispatchAnimationIdRef.current = dispatchRun.id
+          dispatchAnimationStartedAtRef.current = now
+          dispatchRatsRef.current = makeDispatchRats(dispatchRun)
+        } else if (!dispatchRun && dispatchAnimationIdRef.current !== null) {
+          restingFleetDataRef.current = dispatchFleetData(now)
+          dispatchAnimationIdRef.current = null
+          dispatchAnimationStartedAtRef.current = null
+          dispatchRatsRef.current = []
+        }
         // Debug hook: window.__ratOverride pins the rat to a fixed pose so a
         // headless harness can screenshot a controlled orientation.
         const override = (window as any).__ratOverride as
@@ -906,6 +1104,9 @@ switch (ev.event) {
           geometry: f.geometry,
         }))
         zonesRef.current = zones
+        airportGeometryRef.current = zones.find(
+          (zone) => zone.location_id === 132 || zone.zone.toLowerCase().includes('jfk'),
+        )?.geometry ?? null
 
         const regionsRes = await fetch(REGIONS_URL)
         if (disposed) return
@@ -920,6 +1121,7 @@ switch (ev.event) {
         }))
         for (const feature of regionsDoc.features) {
           regionCentroidsRef.current[feature.properties.name] = polygonCentroid(feature.geometry)
+          regionGeometryRef.current[feature.properties.name] = feature.geometry
         }
         regionsLayerRef.current = new GeoJsonLayer({
           id: 'regions',

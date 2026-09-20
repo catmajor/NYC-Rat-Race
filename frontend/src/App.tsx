@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import NycMap from './components/NycMap.tsx'
+import NycMap, { type DispatchRun } from './components/NycMap.tsx'
 import { getActiveWeatherEvent, type WeatherConfig } from './lib/weatherEvents'
 
 const ZONE_IDS = [
@@ -249,6 +249,13 @@ const currency = (value: number) => new Intl.NumberFormat('en-US', {
 
 const shortNumber = (value: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)
 
+function simulationTime(timestamp: string, progress: number): string {
+  const start = new Date(timestamp)
+  const elapsedMinutes = Math.round(180 * Math.max(0, Math.min(1, progress)))
+  start.setMinutes(start.getMinutes() + elapsedMinutes)
+  return start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
 const allocationFromState = (state: GameState): Record<ZoneId, number> =>
   Object.fromEntries(ZONE_IDS.map((zoneId) => [zoneId, state.zones[zoneId].idle_taxis])) as Record<ZoneId, number>
 
@@ -283,6 +290,8 @@ export default function App() {
   const [result, setResult] = useState<RoundResult | null>(null)
   const [gameOverVisible, setGameOverVisible] = useState(false)
   const [isDispatching, setIsDispatching] = useState(false)
+  const [dispatchRun, setDispatchRun] = useState<DispatchRun | null>(null)
+  const [dispatchProgress, setDispatchProgress] = useState(0)
   const [apiConnected, setApiConnected] = useState(true)
   const [weatherConfig, setWeatherConfig] = useState<WeatherConfig | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -347,6 +356,18 @@ export default function App() {
   }, [gameState.completed])
 
   useEffect(() => {
+    if (!isDispatching) {
+      setDispatchProgress(0)
+      return
+    }
+    const startedAt = performance.now()
+    const timer = window.setInterval(() => {
+      setDispatchProgress(Math.min(1, (performance.now() - startedAt) / 15000))
+    }, 100)
+    return () => window.clearInterval(timer)
+  }, [isDispatching])
+
+  useEffect(() => {
     let cancelled = false
     const adviserWeather = numericSignals(gameState.weather as unknown as Record<string, unknown>)
     adviserWeather.visibility_m = gameState.weather.visibility_km * 1000
@@ -386,13 +407,19 @@ export default function App() {
       return
     }
     setIsDispatching(true)
+    setDispatchProgress(0)
+    setDispatchRun({ id: Date.now(), allocation: nextAllocation })
     setError(null)
     try {
-      const response = await fetch('/api/game/advance', {
+      const responsePromise = fetch('/api/game/advance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ day: gameState.day, round: gameState.round, allocation: nextAllocation }),
       })
+      const [response] = await Promise.all([
+        responsePromise,
+        new Promise<void>((resolve) => window.setTimeout(resolve, 15000)),
+      ])
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as { detail?: string }
         throw new Error(payload.detail ?? 'Dispatch failed')
@@ -406,6 +433,7 @@ export default function App() {
       setApiConnected(false)
       setError(dispatchError instanceof Error ? dispatchError.message : 'Dispatch failed')
     } finally {
+      setDispatchRun(null)
       setIsDispatching(false)
     }
   }, [gameState, isDispatching])
@@ -523,7 +551,7 @@ export default function App() {
         </div>
         <div className="header-stat"><span className="stat-label">DAY</span><strong>{gameState.day} / 3</strong></div>
         <div className="header-stat"><span className="stat-label">ROUND</span><strong>{gameState.round} / 4</strong></div>
-        <div className="header-stat wide"><span className="stat-label">WINDOW</span><strong>{gameState.time_start} — {gameState.time_end}</strong></div>
+         <div className="header-stat wide"><span className="stat-label">{isDispatching ? 'TIME' : 'WINDOW'}</span><strong>{isDispatching ? simulationTime(gameState.timestamp, dispatchProgress) : `${gameState.time_start} — ${gameState.time_end}`}</strong></div>
         <div className="header-stat cash"><span className="stat-label">BANK</span><strong>{currency(gameState.currency)}</strong></div>
         <div className={`countdown ${timerUrgent ? 'urgent' : ''}`}>
           <span className="stat-label">DECISION IN</span>
@@ -570,7 +598,7 @@ export default function App() {
               <div><span className="eyebrow">NEW YORK CITY</span><h2>Taxi dispatch operations</h2></div>
               <div className="map-status"><span className="live-dot" /> SIMULATED SCENARIO <small>· {gameState.data_source}</small></div>
             </div>
-             <NycMap allocationByZone={allocation} selectedZone={selectedZone} onZoneSelect={(zoneId) => { if ((ZONE_IDS as readonly string[]).includes(zoneId)) setSelectedZone(zoneId as ZoneId) }} />
+             <NycMap allocationByZone={allocation} selectedZone={selectedZone} dispatchRun={dispatchRun} onZoneSelect={(zoneId) => { if ((ZONE_IDS as readonly string[]).includes(zoneId)) setSelectedZone(zoneId as ZoneId) }} />
             <div className="map-chrome map-chrome-bottom">
                <div className="map-key"><span className="key-swatch demand" /> Weekday average <span className="key-swatch fleet" /> Your fleet</div>
               <div className="map-coords">40° 44′ N&nbsp;&nbsp; 73° 59′ W</div>
