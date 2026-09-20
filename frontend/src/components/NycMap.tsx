@@ -3,7 +3,7 @@ import { Map as MapLibreMap, NavigationControl, type StyleSpecification } from '
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapboxOverlay } from '@deck.gl/mapbox'
 import { LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core'
-import { GeoJsonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers'
+import { GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers'
 import { ScenegraphLayer } from '@deck.gl/mesh-layers'
 import { RatRouter } from '../lib/ratRouter'
 import { zoneAt, polygonCentroid, type TaxiZone } from '../lib/zones'
@@ -90,7 +90,6 @@ export default function NycMap() {
   const routerRef = useRef<RatRouter | null>(null)
   const zonesRef = useRef<TaxiZone[]>([])
   const zonesLayerRef = useRef<GeoJsonLayer | null>(null)
-  const labelsLayerRef = useRef<TextLayer<any> | null>(null)
   // Building data is kept separate from the layer so the layer can be rebuilt
   // with a different `visible` flag on zoom-gate crossings. Rebuilding preserves
   // the same `data` reference, so deck reuses GPU buffers instead of unloading
@@ -271,7 +270,6 @@ export default function NycMap() {
         makeFootstepsLayer(),
         makeBuildingsLayer(showTiles),
         zonesLayerRef.current,
-        labelsLayerRef.current,
       ].filter(Boolean)
     }
 
@@ -349,22 +347,6 @@ export default function NycMap() {
             const z = info.object?.properties as TaxiZone | undefined
             setHovered(z ? `${z.zone} · ${z.borough}` : null)
           },
-        })
-        labelsLayerRef.current = new TextLayer<any>({
-          id: 'zone-labels',
-          data: zones.filter((z) => z.borough === 'Manhattan'),
-          getPosition: (d) => [d.centroid.lon, d.centroid.lat],
-          getText: (d) => d.zone,
-          getAlignmentBaseline: 'center',
-          getTextAnchor: 'middle',
-          getSize: 12,
-          sizeUnits: 'pixels',
-          fontFamily: 'Consolas, monospace',
-          getColor: [51, 51, 51, 230],
-          background: true,
-          getBackgroundColor: [255, 255, 255, 160],
-          getBorderColor: [110, 110, 110, 180],
-          getBorderWidth: 1,
         })
 
         const roadsRes = await fetch(ROADS_URL)
