@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -240,6 +241,9 @@ class PointInTimeSignals:
         self._region_polygons = _load_region_polygons(region_polygons_path)
         self._news_scenario = news_scenario
         self._weather_by_hour: Optional[Dict[datetime, Dict[str, float]]] = None
+        self._station_weather_by_hour: Optional[
+            Dict[str, Dict[datetime, Dict[str, float]]]
+        ] = None
         self._events_by_date: Optional[Dict[date, Dict[str, float]]] = None
 
     @property
@@ -265,6 +269,10 @@ class PointInTimeSignals:
         buckets: Dict[datetime, Dict[str, List[float]]] = defaultdict(
             lambda: defaultdict(list)
         )
+        station_buckets: Dict[str, Dict[datetime, Dict[str, List[float]]]] = defaultdict(
+            lambda: defaultdict(lambda: defaultdict(list))
+        )
+        station_locations: Dict[str, Tuple[float, float]] = {}
         for path in self.noaa_files:
             with Path(path).open(newline="", encoding="utf-8", errors="replace") as source:
                 for row in csv.DictReader(source):
@@ -272,6 +280,13 @@ class PointInTimeSignals:
                     if observed is None:
                         continue
                     bucket = observed.replace(minute=0, second=0, microsecond=0)
+                    station = (row.get("STATION") or Path(path).stem).strip()
+                    try:
+                        latitude = float(row.get("LAT", ""))
+                        longitude = float(row.get("LON", ""))
+                        station_locations[station] = (longitude, latitude)
+                    except ValueError:
+                        pass
                     temperature = _parse_packed_number(row.get("TMP"), scale=0.1)
                     wind = _parse_packed_number(
                         ",".join((row.get("WND") or "").split(",")[3:5]),
@@ -287,6 +302,7 @@ class PointInTimeSignals:
                     ):
                         if value is not None:
                             buckets[bucket][key].append(value)
+                            station_buckets[station][bucket][key].append(value)
 
         self._weather_by_hour = {}
         for bucket, values in buckets.items():
@@ -295,6 +311,19 @@ class PointInTimeSignals:
                 for key, items in values.items()
                 if items
             }
+        self._station_weather_by_hour = {
+            station: {
+                bucket: {
+                    key: (max(items) if key == "rain_mm" else mean(items))
+                    for key, items in values.items()
+                    if items
+                }
+                for bucket, values in buckets_by_hour.items()
+            }
+            for station, buckets_by_hour in station_buckets.items()
+            if station in station_locations
+        }
+        self._station_locations = station_locations
 
     def weather_at(self, timestamp: datetime) -> Dict[str, float]:
         if not self.noaa_files:
@@ -309,6 +338,64 @@ class PointInTimeSignals:
         if target - nearest > timedelta(hours=3):
             return {}
         return dict(self._weather_by_hour[nearest])
+
+    def weather_by_zone_at(self, timestamp: datetime) -> Dict[str, Dict[str, float]]:
+        """Return weather weighted from the nearest NOAA stations per region."""
+        if not self.noaa_files:
+            return {}
+        self._load_noaa()
+        station_weather = self._station_weather_by_hour or {}
+        locations = getattr(self, "_station_locations", {})
+        if not station_weather or not self._region_polygons:
+            return {}
+
+        target = _local_to_utc_naive(timestamp).replace(minute=0, second=0, microsecond=0)
+        observations = []
+        for station, by_hour in station_weather.items():
+            candidates = [hour for hour in by_hour if hour <= target]
+            if not candidates:
+                continue
+            nearest = max(candidates)
+            if target - nearest <= timedelta(hours=3):
+                observations.append((station, locations[station], by_hour[nearest]))
+
+        result: Dict[str, Dict[str, float]] = {}
+        for zone_id, rings in self._region_polygons:
+            points = [point for ring in rings for point in ring]
+            if not points:
+                continue
+            zone_lon = mean(point[0] for point in points)
+            zone_lat = mean(point[1] for point in points)
+            ranked = sorted(
+                observations,
+                key=lambda item: (item[1][0] - zone_lon) ** 2
+                + (item[1][1] - zone_lat) ** 2,
+            )[:3]
+            if not ranked:
+                continue
+            weights = []
+            for _, (longitude, latitude), _ in ranked:
+                distance = math.hypot(
+                    (longitude - zone_lon) * math.cos(math.radians(zone_lat)),
+                    latitude - zone_lat,
+                )
+                weights.append(1.0 / max(distance, 1e-6))
+            total_weight = sum(weights)
+            values = {
+                key: sum(
+                    weather.get(key, 0.0) * weight
+                    for weight, (_, _, weather) in zip(weights, ranked)
+                )
+                / total_weight
+                for key in ("temperature_c", "wind_mps", "visibility_m", "rain_mm")
+            }
+            result[zone_id] = {
+                "temperature_c": values["temperature_c"],
+                "wind_mps": values["wind_mps"],
+                "visibility_km": values["visibility_m"] / 1000.0,
+                "rain_mm": values["rain_mm"],
+            }
+        return result
 
     def _load_gdelt(self) -> None:
         if self._events_by_date is not None:

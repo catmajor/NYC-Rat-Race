@@ -30,18 +30,24 @@ ZONE_LABELS: Dict[str, str] = {
     "south_brooklyn": "South Brooklyn",
     "queens_west": "Queens West",
     "airports": "Airports",
+    "queens_east": "Queens East",
+    "bronx": "The Bronx",
+    "staten_island": "Staten Island",
 }
 
 INITIAL_ALLOCATION: Dict[str, int] = {
     "harlem": 7,
     "upper_west": 10,
     "upper_east": 12,
-    "midtown": 30,
-    "downtown": 18,
+    "midtown": 26,
+    "downtown": 15,
     "north_brooklyn": 12,
     "south_brooklyn": 6,
     "queens_west": 12,
-    "airports": 23,
+    "airports": 18,
+    "queens_east": 6,
+    "bronx": 4,
+    "staten_island": 2,
 }
 
 BASELINE_BY_ZONE: Dict[str, float] = {
@@ -54,6 +60,9 @@ BASELINE_BY_ZONE: Dict[str, float] = {
     "south_brooklyn": 22,
     "queens_west": 34,
     "airports": 30,
+    "queens_east": 28,
+    "bronx": 26,
+    "staten_island": 12,
 }
 
 ROUND_PEAKS: List[Dict[str, float]] = [
@@ -215,6 +224,7 @@ class GameSession:
                 "model_share": round(forecast / total_forecast, 4),
                 "idle_taxis": self.idle_taxis.get(zone_id, 0),
                 "trend": "up" if forecast >= float(baseline[zone_id]) else "flat",
+                "weather": dict(profile["weather"]),
             }
         weather = dict(profile["weather"])
         weather["note"] = "Wet roads favor dense central pickups" if weather["rain_mm"] else "Good visibility across the core"

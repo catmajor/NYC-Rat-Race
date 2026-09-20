@@ -14,7 +14,7 @@ from .config import (
     get_narrative_generator,
     get_point_in_time_signals,
 )
-from .game import SESSION, ZONE_IDS
+from .game import BASELINE_BY_ZONE, SESSION, ZONE_IDS
 from .models import AdviserResponse, HistoricalState
 
 
@@ -88,6 +88,33 @@ ADVISER_METADATA = {
         ],
     },
 }
+
+
+def _game_state() -> Dict[str, object]:
+    """Return the game state with store-derived regional context."""
+    state = SESSION.state()
+    store, data_source = get_analogue_store()
+    means = store.weekday_mean(SESSION.timestamp)
+    zones = state["zones"]
+    assert isinstance(zones, dict)
+    for zone_id in ZONE_IDS:
+        zone = zones[zone_id]
+        assert isinstance(zone, dict)
+        zone["historic_mean"] = round(
+            means.get(zone_id, BASELINE_BY_ZONE[zone_id]), 1
+        )
+
+    if data_source.startswith("tlc-"):
+        regional = get_point_in_time_signals().weather_by_zone_at(SESSION.timestamp)
+        for zone_id, weather in regional.items():
+            if zone_id in zones:
+                zones[zone_id]["weather"] = {
+                    **zones[zone_id].get("weather", {}),
+                    **weather,
+                }
+
+    state["weekday_label"] = SESSION.timestamp.strftime("%A").upper()
+    return state
 
 
 def _run_adviser(adviser_id: str, request: AdviserRequest) -> AdviserResponse:
@@ -196,13 +223,13 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
     @app.get("/api/game/state", tags=["game"])
     def game_state() -> Dict[str, object]:
         """Return the current decision state for the local Rat Cab session."""
-        return SESSION.state()
+        return _game_state()
 
     @app.post("/api/game/reset", tags=["game"])
     def reset_game() -> Dict[str, object]:
         """Reset the local deterministic simulation to day one."""
         SESSION.reset()
-        return SESSION.state()
+        return _game_state()
 
     @app.post("/api/game/advance", tags=["game"])
     def advance_game(request: GameAdvanceRequest) -> Dict[str, object]:
@@ -213,7 +240,7 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
             result = SESSION.advance(request.allocation)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {"result": result, "state": SESSION.state(), "zones": list(ZONE_IDS)}
+        return {"result": result, "state": _game_state(), "zones": list(ZONE_IDS)}
 
     @app.post("/api/game/timeout", tags=["game"])
     def timeout_game(request: GameTimeoutRequest) -> Dict[str, object]:
@@ -224,7 +251,7 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
             SESSION.timeout()
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return {"state": SESSION.state(), "zones": list(ZONE_IDS)}
+        return {"state": _game_state(), "zones": list(ZONE_IDS)}
 
     if frontend_dist is None:
         frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"

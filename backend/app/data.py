@@ -29,6 +29,11 @@ class AnalogueStore(Protocol):
     ) -> List[AnalogueMatch]:
         """Return the closest historical episodes to state."""
 
+    def weekday_mean(
+        self, timestamp: datetime, *, min_samples: int = 1
+    ) -> Dict[str, float]:
+        """Return average demand by zone for the timestamp's weekday."""
+
 
 def _total_demand(demand_by_zone: Mapping[str, float]) -> float:
     return max(sum(max(value, 0.0) for value in demand_by_zone.values()), 0.0)
@@ -129,6 +134,24 @@ class InMemoryAnalogueStore:
 
         ranked.sort(key=lambda match: (match.distance, match.timestamp))
         return ranked[: max(limit, 0)]
+
+    def weekday_mean(
+        self, timestamp: datetime, *, min_samples: int = 1
+    ) -> Dict[str, float]:
+        matches = [
+            episode.state
+            for episode in self.episodes
+            if episode.state.timestamp.weekday() == timestamp.weekday()
+        ]
+        if len(matches) < max(min_samples, 1):
+            matches = [episode.state for episode in self.episodes]
+        if not matches:
+            return {}
+        return {
+            zone_id: sum(state.demand_by_zone.get(zone_id, 0.0) for state in matches)
+            / len(matches)
+            for zone_id in ZONE_IDS
+        }
 
 
 def build_demo_analogue_store() -> InMemoryAnalogueStore:

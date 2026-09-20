@@ -7,6 +7,7 @@ import { GeoJsonLayer, LineLayer, PolygonLayer, ScatterplotLayer } from '@deck.g
 import { ScenegraphLayer } from '@deck.gl/mesh-layers'
 import { RatRouter } from '../lib/ratRouter'
 import { polygonCentroid, type TaxiZone } from '../lib/zones'
+import { getActiveWeatherEvent, type WeatherConfig, type WeatherEvent } from '../lib/weatherEvents'
 
 // Tune-by-eye constants (visual calibration happens in the browser):
 export const RAT_SIZE_SCALE = 50// rat.glb is ~1 world unit; this makes the rat
@@ -58,44 +59,6 @@ const BUILDINGS_URL = '/data/buildings.geojson'
 // the frontend never hardcodes event→region.
 const WEATHER_URL = '/data/weather_events.json'
 
-interface WeatherEvent {
-  event: string
-  label: string
-  emoji: string
-  ml_delta: Record<string, number>
-  tint?: [number, number, number, number]
-  // Area wind for an event: direction the wind blows TOWARD (compass degrees,
-  // 90 = east) and strength in m/s. Drives wind chevron orientation/march and
-  // rain slant/drift. Omitted = calm (rain falls straight) / east at 8 m/s.
-  wind?: { dir_deg: number; speed_ms: number }
-}
-
-interface WeatherConfig {
-  default: WeatherEvent
-  // Per-region config. `wind` is the area's prevailing wind (blows TOWARD
-  // dir_deg, in m/s). Weather FX prefer the region wind so rain/wind graphics
-  // line up even when the active event changes (e.g. rain under a windy area).
-  regions: Record<string, { current: string; possible: WeatherEvent[]; wind?: { dir_deg: number; speed_ms: number } }>
-}
-
-// Current event for a region, honoring the window.__weatherOverride demo knob
-// (mirrors __ratOverride). Non-determined regions resolve through the config's
-// per-region `current`, falling back to the default event. Returns null when
-// the active event is the default "clear" so nothing renders for it.
-function activeWeatherEvent(weather: WeatherConfig | null, slug: string): WeatherEvent | null {
-  if (!weather) return null
-  const override = (window as any).__weatherOverride as Record<string, string> | undefined
-  const currentId = override?.[slug] ?? weather.regions?.[slug]?.current ?? weather.default.event
-  if (currentId === weather.default.event) return null
-  const block = weather.regions?.[slug]
-  const found = block?.possible.find((p) => p.event === currentId)
-  if (!found) {
-    console.warn(`[weather] region "${slug}" current "${currentId}" not in possible set`)
-    return null
-  }
-  return found
-}
-
 // Multiply a base rgb region color by an event tint (rgba). Returns the base
 // color when no tint is set so the weather reads as a subtle region-wide wash.
 function tintColor(base: [number, number, number], event: WeatherEvent | null) {
@@ -130,7 +93,9 @@ const REGION_CELL_SCALE: Record<string, number> = {
   south_brooklyn: 1.3,
   queens_west: 1.5,
   queens_east: 2.3,
-  airports: 2.1,
+  // Keep airport weather local to JFK rather than spanning the whole airport
+  // macro-region (which also contains LaGuardia and broad approach areas).
+  airports: 0.65,
   bronx: 1.5,
   staten_island: 2.4,
 }
@@ -217,6 +182,12 @@ const REGION_COLORS: Record<string, [number, number, number]> = {
   airports: [156, 117, 95],
   bronx: [126, 90, 190],
   staten_island: [60, 160, 190],
+}
+
+const WEATHER_CENTERS: Record<string, { lon: number; lat: number }> = {
+  // JFK terminal/airfield center; airport weather FX should not bridge JFK and
+  // the other airports in the macro-region.
+  airports: { lon: -73.7781, lat: 40.6413 },
 }
 
 const MAP_STYLE: StyleSpecification = {
@@ -343,19 +314,18 @@ export default function NycMap({
     })
     ;(window as any).__zoomRefGet = () => zoomRef.current
 
-    // Building layer factory: extruded footprints colored by the taxi zone
-    // borough they were joined to (see data prep). `visible` toggles the
-    // z12+ zoom gate without removing the layer from the scene.
-    const makeBuildingsLayer = (visible: boolean): GeoJsonLayer | null => {
+    // Building layer factory: extruded footprints colored by the taxi region
+    // they were joined to (see data prep). The city remains 3D at every zoom.
+    const makeBuildingsLayer = (): GeoJsonLayer | null => {
       const feats = buildingsDataRef.current
       if (!feats) return null
       const w = window as any
       const heightScale = w.__buildingHeightScale ?? BUILDING_HEIGHT_SCALE
-      if (w.__buildingsDebug) console.log('[buildings] make visible=', visible, 'zoom=', (window as any).__zoomRefGet ? (window as any).__zoomRefGet() : null)
+      if (w.__buildingsDebug) console.log('[buildings] make always visible')
       return new GeoJsonLayer({
         id: 'buildings',
         data: feats as any,
-        visible,
+        visible: true,
         extruded: true,
         pickable: false,
         stroked: false,
@@ -366,8 +336,13 @@ export default function NycMap({
         elevationScale: heightScale,
         getFillColor: (f: { properties: { region: string } }) => {
           const c = REGION_COLORS[f.properties.region] ?? [170, 170, 170]
-          const tinted = tintColor(c, activeWeatherEvent(weatherRef.current, f.properties.region))
-          return [tinted[0], tinted[1], tinted[2], 200]
+          const tinted = tintColor(c, getActiveWeatherEvent(weatherRef.current, f.properties.region))
+          return [
+            Math.round(tinted[0] * 0.58),
+            Math.round(tinted[1] * 0.58),
+            Math.round(tinted[2] * 0.58),
+            220,
+          ]
         },
         material: {
           // Near-flat look: high ambient keeps the color mostly solid, modest
@@ -496,10 +471,10 @@ export default function NycMap({
       const activeSlugs: string[] = []
 
       for (const slug of Object.keys(regionCentroidsRef.current)) {
-        const ev = activeWeatherEvent(weather, slug)
+        const ev = getActiveWeatherEvent(weather, slug)
         if (!ev) continue
         activeSlugs.push(slug)
-        const center = regionCentroidsRef.current[slug]
+        const center = WEATHER_CENTERS[slug] ?? regionCentroidsRef.current[slug]
         // Area wind: region-level prevailing wind wins, event wind is fallback.
         const wind = weather.regions?.[slug]?.wind ?? ev.wind
         const rand = mulberry32(hashStr(slug) || 1)
@@ -831,12 +806,12 @@ switch (ev.event) {
       return fx
     }
 
-    // Static layers: 3D building extrusion appears only when zoomed in, keeping
-    // the city-wide roaming view cheap. Buildings always stay in the layer list
-    // (just hidden), otherwise deck unloads them and they never return after
-    // zooming back in.
+    // Static layers: keep the building extrusion in the scene at every zoom so
+    // the city never collapses into a flat map while the player explores.
     const baseLayers = (pose: RatPose) => {
-      const showTiles = zoomRef.current >= 12
+      // Re-run the weather outline accessors at a modest cadence. Without an
+      // update trigger, Date.now() inside a deck accessor is not observable.
+      const weatherPulseTick = Math.floor(performance.now() / 180)
       // Weather FX go AFTER buildings/regions: translucent geometry still
       // writes depth and depth-culls anything painted behind it, so if the
       // clouds render first they silently hide building extrusion and region
@@ -845,8 +820,40 @@ switch (ev.event) {
         makeRatLayer(pose),
         makeFleetLayer(),
         makeFootstepsLayer(),
-        makeBuildingsLayer(showTiles),
-        regionsLayerRef.current,
+        makeBuildingsLayer(),
+        // A broad, translucent pulse sits underneath the crisp event border.
+        // As it expands, the opaque border remains fixed and makes the motion
+        // read as a soft inward breath rather than a flashing outline.
+        regionsLayerRef.current?.clone({
+          id: 'regions-weather-pulse',
+          pickable: false,
+          filled: false,
+          getLineWidth: (f: { properties: { name: string } }) => {
+            const event = getActiveWeatherEvent(weatherRef.current, f.properties.name)?.event
+            if (event !== 'heatwave' && event !== 'cold') return 0
+            const phase = hashStr(f.properties.name) / 4294967296
+            const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 900 + phase * Math.PI * 2)
+            return 5 + pulse * 7
+          },
+          getLineColor: (f: { properties: { name: string } }) => {
+            const event = getActiveWeatherEvent(weatherRef.current, f.properties.name)?.event
+            const phase = hashStr(f.properties.name) / 4294967296
+            const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 900 + phase * Math.PI * 2)
+            const alpha = Math.round(28 + pulse * 34)
+            return event === 'heatwave' ? [255, 75, 35, alpha] : [80, 175, 255, alpha]
+          },
+          updateTriggers: {
+            getLineColor: [weatherPulseTick],
+            getLineWidth: [weatherPulseTick],
+          },
+        }),
+        regionsLayerRef.current?.clone({
+          updateTriggers: {
+            getFillColor: [selectedZoneRef.current, ...Object.entries(allocationRef.current).flat()],
+            getLineColor: [selectedZoneRef.current, weatherPulseTick],
+            getLineWidth: [selectedZoneRef.current, weatherPulseTick],
+          },
+        }),
         ...makeWeatherFX(),
       ].filter(Boolean)
     }
@@ -924,31 +931,27 @@ switch (ev.event) {
           lineWidthUnits: 'pixels',
           lineWidthMinPixels: 1.5,
           getLineWidth: (f: { properties: { name: string } }) => {
-            const e = activeWeatherEvent(weatherRef.current, f.properties.name)
-            return e?.event === 'heatwave' || e?.event === 'cold' ? 3.5 : 1.5
+            if (selectedZoneRef.current === f.properties.name) return 4.5
+            const e = getActiveWeatherEvent(weatherRef.current, f.properties.name)
+            return e?.event === 'heatwave' || e?.event === 'cold' ? 2.2 : 1.5
           },
           getFillColor: (f: { properties: { name: string } }) => {
             const c = REGION_COLORS[f.properties.name] ?? [160, 160, 160]
             const selected = selectedZoneRef.current === f.properties.name
             const taxis = allocationRef.current[f.properties.name] ?? 0
             if (selected) return [245, 194, 24, 150]
-            const tinted = tintColor(c, activeWeatherEvent(weatherRef.current, f.properties.name))
+            const tinted = tintColor(c, getActiveWeatherEvent(weatherRef.current, f.properties.name))
             return [tinted[0], tinted[1], tinted[2], Math.min(125, 32 + taxis * 2)]
           },
           getLineColor: (f: { properties: { name: string } }) => {
             const name = f.properties.name
-            // Heat/cold flash the region outline itself (phase-offset per
-            // region so neighbours never breathe in lock-step) instead of a
-            // centroid glow disc.
-            const ev = activeWeatherEvent(weatherRef.current, name)
-            const phase = hashStr(name) / 4294967296
+            if (selectedZoneRef.current === name) return [245, 194, 24, 255]
+            const ev = getActiveWeatherEvent(weatherRef.current, name)
             if (ev?.event === 'heatwave') {
-              const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 260 + phase * Math.PI * 2)
-              return [255, Math.round(110 + 100 * pulse), 30, 255]
+              return [255, 82, 42, 235]
             }
             if (ev?.event === 'cold') {
-              const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320 + phase * Math.PI * 2)
-              return [Math.round(100 + 120 * pulse), 195, 255, 255]
+              return [88, 176, 255, 235]
             }
             const c = REGION_COLORS[name] ?? [200, 200, 200]
             return [c[0], c[1], c[2], 220]

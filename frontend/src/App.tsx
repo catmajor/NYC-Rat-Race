@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import NycMap from './components/NycMap.tsx'
+import { getActiveWeatherEvent, type WeatherConfig } from './lib/weatherEvents'
 
 const ZONE_IDS = [
   'harlem',
@@ -11,9 +12,14 @@ const ZONE_IDS = [
   'south_brooklyn',
   'queens_west',
   'airports',
+  'queens_east',
+  'bronx',
+  'staten_island',
 ] as const
 
 type ZoneId = (typeof ZONE_IDS)[number]
+const REGION_IDS = ZONE_IDS
+type RegionId = ZoneId
 type NumericMap = Record<string, number>
 
 interface ZoneState {
@@ -22,9 +28,11 @@ interface ZoneState {
   recent_demand: number
   baseline_demand: number
   model_forecast: number
+  historic_mean: number
   model_share: number
   idle_taxis: number
   trend: 'up' | 'flat'
+  weather?: WeatherState
 }
 
 interface WeatherState {
@@ -63,6 +71,7 @@ interface GameState {
   average_model_match: number
   best_model_match: number
   zones: Record<ZoneId, ZoneState>
+  weekday_label: string
   weather: WeatherState
   events: NumericMap
   news: NewsItem[]
@@ -114,6 +123,16 @@ const LABELS: Record<ZoneId, string> = {
   south_brooklyn: 'South Brooklyn',
   queens_west: 'Queens West',
   airports: 'Airports',
+  queens_east: 'Queens East',
+  bronx: 'The Bronx',
+  staten_island: 'Staten Island',
+}
+
+const REGION_LABELS: Record<RegionId, string> = {
+  ...LABELS,
+  queens_east: 'Queens East',
+  bronx: 'The Bronx',
+  staten_island: 'Staten Island',
 }
 
 const ADVISER_IDS = ['twitch', 'stormy', 'grandpa', 'gossip'] as const
@@ -135,7 +154,10 @@ const INITIAL_ALLOCATION: Record<ZoneId, number> = {
   north_brooklyn: 12,
   south_brooklyn: 6,
   queens_west: 12,
-  airports: 23,
+  airports: 18,
+  queens_east: 6,
+  bronx: 4,
+  staten_island: 2,
 }
 
 function makeFallbackState(): GameState {
@@ -149,6 +171,9 @@ function makeFallbackState(): GameState {
     south_brooklyn: 29,
     queens_west: 43,
     airports: 58,
+    queens_east: 37,
+    bronx: 32,
+    staten_island: 18,
   }
   const recent: Record<ZoneId, number> = {
     harlem: 28,
@@ -160,6 +185,9 @@ function makeFallbackState(): GameState {
     south_brooklyn: 25,
     queens_west: 39,
     airports: 49,
+    queens_east: 31,
+    bronx: 27,
+    staten_island: 15,
   }
   const forecastTotal = Object.values(forecast).reduce((sum, value) => sum + value, 0)
   const zones = Object.fromEntries(
@@ -168,7 +196,8 @@ function makeFallbackState(): GameState {
       name: LABELS[id],
       recent_demand: recent[id],
       baseline_demand: Math.round(forecast[id] * 0.82),
-      model_forecast: forecast[id],
+       model_forecast: forecast[id],
+       historic_mean: Math.round(forecast[id] * 0.72),
       model_share: forecast[id] / forecastTotal,
       idle_taxis: INITIAL_ALLOCATION[id],
       trend: forecast[id] > recent[id] ? 'up' : 'flat',
@@ -201,6 +230,7 @@ function makeFallbackState(): GameState {
       visibility_km: 10,
       note: 'Good visibility across the core',
     },
+    weekday_label: 'FRIDAY',
     events: { event_count: 4, num_articles: 10, midtown: 1.35 },
     news: [{ zone: 'MIDTOWN', zone_id: 'midtown', headline: 'Morning arrivals are compressing around Penn Station', age: '12 min ago', intensity: 'high' }],
     model_name: 'Demand model / scenario replay',
@@ -254,6 +284,7 @@ export default function App() {
   const [gameOverVisible, setGameOverVisible] = useState(false)
   const [isDispatching, setIsDispatching] = useState(false)
   const [apiConnected, setApiConnected] = useState(true)
+  const [weatherConfig, setWeatherConfig] = useState<WeatherConfig | null>(null)
   const [error, setError] = useState<string | null>(null)
   const allocationRef = useRef(allocation)
   const dispatchRef = useRef<() => void>(() => undefined)
@@ -263,7 +294,18 @@ export default function App() {
   const assigned = Object.values(allocation).reduce((sum, value) => sum + value, 0)
   const remaining = gameState.fleet_available - assigned
   const activeResponse = adviserResponses[activeAdviser] ?? fallbackAdviser(activeAdviser, gameState)
-  const modelLeader = useMemo(() => ZONE_IDS.reduce((best, zoneId) => gameState.zones[zoneId].model_forecast > gameState.zones[best].model_forecast ? zoneId : best, ZONE_IDS[0]), [gameState])
+  const historicLeader = useMemo(() => ZONE_IDS.reduce((best, zoneId) => gameState.zones[zoneId].historic_mean > gameState.zones[best].historic_mean ? zoneId : best, ZONE_IDS[0]), [gameState])
+  const weatherEvent = getActiveWeatherEvent(weatherConfig, selectedZone)
+  const baseWeather = gameState.zones[selectedZone].weather ?? gameState.weather
+  const eventDelta = weatherEvent?.ml_delta ?? {}
+  const selectedWeather = {
+    ...baseWeather,
+    label: weatherEvent ? `${weatherEvent.emoji} ${weatherEvent.label}` : baseWeather.label,
+    temperature_c: baseWeather.temperature_c + (eventDelta.temp_c ?? 0),
+    rain_mm: Math.max(0, baseWeather.rain_mm + (eventDelta.precip_mm ?? 0)),
+    wind_mps: Math.max(0, baseWeather.wind_mps + (eventDelta.wind_ms ?? 0)),
+    visibility_km: Math.max(0.1, baseWeather.visibility_km + (eventDelta.vis_km ?? 0)),
+  }
 
   useEffect(() => {
     allocationRef.current = allocation
@@ -286,6 +328,13 @@ export default function App() {
   useEffect(() => {
     void loadState()
   }, [loadState])
+
+  useEffect(() => {
+    fetch('/data/weather_events.json')
+      .then((response) => response.ok ? response.json() as Promise<WeatherConfig> : null)
+      .then((config) => { if (config) setWeatherConfig(config) })
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     setSecondsLeft(90)
@@ -493,13 +542,15 @@ export default function App() {
           <div className="allocation-summary"><span>{assigned} / {gameState.fleet_available} ASSIGNED</span><span className={remaining === 0 ? 'ready' : ''}>{remaining === 0 ? 'READY' : `${remaining} TO PLACE`}</span></div>
           <div className="zone-head"><span>REGION</span><span>AVAILABLE</span></div>
           <div className="zone-list">
-            {ZONE_IDS.map((zoneId) => {
+            {REGION_IDS.map((regionId) => {
+              const zoneId = regionId
               const zone = gameState.zones[zoneId]
-              const share = Math.min(100, (allocation[zoneId] / Math.max(gameState.fleet_available, 1)) * 260)
+              const assignedHere = allocation[zoneId]
+              const share = Math.min(100, (assignedHere / Math.max(gameState.fleet_available, 1)) * 260)
               return (
-                <button key={zoneId} type="button" className={`zone-row ${selectedZone === zoneId ? 'selected' : ''}`} onClick={() => setSelectedZone(zoneId)}>
+                <button key={regionId} type="button" className={`zone-row ${selectedZone === zoneId ? 'selected' : ''}`} onClick={() => setSelectedZone(zoneId)}>
                   <span className="zone-color" />
-                  <span className="zone-name">{zone.name}</span>
+                  <span className="zone-name">{REGION_LABELS[regionId]}</span>
                   <span className="zone-demand"><i style={{ width: `${share}%` }} /><small>{zone.model_forecast}</small></span>
                   <span className="zone-controls">
                     <span className="stepper" onClick={(event) => { event.stopPropagation(); changeAllocation(zoneId, -1) }}>−</span>
@@ -519,9 +570,9 @@ export default function App() {
               <div><span className="eyebrow">NEW YORK CITY</span><h2>Taxi dispatch operations</h2></div>
               <div className="map-status"><span className="live-dot" /> SIMULATED SCENARIO <small>· {gameState.data_source}</small></div>
             </div>
-            <NycMap allocationByZone={allocation} selectedZone={selectedZone} onZoneSelect={(zoneId) => setSelectedZone(zoneId as ZoneId)} />
+             <NycMap allocationByZone={allocation} selectedZone={selectedZone} onZoneSelect={(zoneId) => { if ((ZONE_IDS as readonly string[]).includes(zoneId)) setSelectedZone(zoneId as ZoneId) }} />
             <div className="map-chrome map-chrome-bottom">
-              <div className="map-key"><span className="key-swatch demand" /> Demand pulse <span className="key-swatch fleet" /> Your fleet</div>
+               <div className="map-key"><span className="key-swatch demand" /> Weekday average <span className="key-swatch fleet" /> Your fleet</div>
               <div className="map-coords">40° 44′ N&nbsp;&nbsp; 73° 59′ W</div>
             </div>
             {result && !gameOverVisible && (
@@ -561,29 +612,30 @@ export default function App() {
 
         <aside className="right-column">
           <section className="panel signal-panel weather-panel">
-            <div className="panel-heading compact"><div><span className="eyebrow">ATMOSPHERE</span><h2>Weather station</h2></div><span className="station-tag">STN 724</span></div>
-            <div className="weather-hero"><span className="weather-icon">{gameState.weather.rain_mm ? '☂' : '◒'}</span><div><strong>{gameState.weather.label}</strong><small>{gameState.weather.note}</small></div></div>
+             <div className="panel-heading compact"><div><span className="eyebrow">ATMOSPHERE</span><h2>Weather station</h2></div><span className="station-tag">{LABELS[selectedZone].toUpperCase()} · STN 724</span></div>
+             <div className="weather-hero"><span className="weather-icon">{selectedWeather.rain_mm ? '☂' : '◒'}</span><div><strong>{selectedWeather.label}</strong><small>{selectedWeather.note}</small></div></div>
             <div className="weather-grid">
-              <span><b>{gameState.weather.temperature_c.toFixed(1)}°</b><small>TEMP</small></span>
-              <span><b>{gameState.weather.rain_mm.toFixed(1)} mm</b><small>RAIN / 1H</small></span>
-              <span><b>{gameState.weather.wind_mps.toFixed(1)} m/s</b><small>WIND</small></span>
-              <span><b>{gameState.weather.visibility_km.toFixed(1)} km</b><small>VISIBILITY</small></span>
+               <span><b>{selectedWeather.temperature_c.toFixed(1)}°</b><small>TEMP</small></span>
+               <span><b>{selectedWeather.rain_mm.toFixed(1)} mm</b><small>RAIN / 1H</small></span>
+               <span><b>{selectedWeather.wind_mps.toFixed(1)} m/s</b><small>WIND</small></span>
+               <span><b>{selectedWeather.visibility_km.toFixed(1)} km</b><small>VISIBILITY</small></span>
             </div>
             <div className="signal-foot"><span /> {gameState.timestamp.replace('T', ' ')} local observation</div>
           </section>
 
           <section className="panel signal-panel demand-panel">
-            <div className="panel-heading compact"><div><span className="eyebrow">FORECAST LAYER</span><h2>Demand pulse</h2></div><span className="confidence">{Math.round(gameState.model_confidence * 100)}% CONF.</span></div>
-            <div className="demand-comparison"><div><span>Recent demand</span><strong>{shortNumber(ZONE_IDS.reduce((sum, zoneId) => sum + gameState.zones[zoneId].recent_demand, 0))}</strong></div><div className="compare-arrow">→</div><div><span>Next 3 hours</span><strong>{shortNumber(ZONE_IDS.reduce((sum, zoneId) => sum + gameState.zones[zoneId].model_forecast, 0))}</strong></div></div>
-            <div className="model-line"><span>MODEL TOP PICK</span><b>{LABELS[modelLeader]}</b><em>+{Math.round((gameState.zones[modelLeader].model_forecast / Math.max(gameState.zones[modelLeader].baseline_demand, 1) - 1) * 100)}%</em></div>
-            <div className="mini-bars">{ZONE_IDS.map((zoneId) => <span key={zoneId} title={LABELS[zoneId]} style={{ height: `${Math.max(14, (gameState.zones[zoneId].model_forecast / gameState.zones[modelLeader].model_forecast) * 100)}%`, background: zoneId === modelLeader ? '#f2bf24' : 'rgba(237,231,215,.36)' }} />)}</div>
-            <div className="signal-foot"><span /> {gameState.model_name}</div>
+             <div className="panel-heading compact"><div><span className="eyebrow">HISTORIC DEMAND</span><h2>Weekday average</h2></div><span className="confidence">{gameState.weekday_label.slice(0, 3)}</span></div>
+             <div className="demand-comparison"><div><span>{LABELS[selectedZone]} recent</span><strong>{shortNumber(gameState.zones[selectedZone].recent_demand)}</strong></div><div className="compare-arrow">→</div><div><span>Weekday avg</span><strong>{shortNumber(gameState.zones[selectedZone].historic_mean)}</strong></div></div>
+             <div className="model-line"><span>{gameState.weekday_label} MEAN</span><b>{LABELS[historicLeader]}</b><em>{Math.round((gameState.zones[historicLeader].historic_mean / Math.max(gameState.zones[selectedZone].historic_mean, 1) - 1) * 100)}%</em></div>
+             <div className="mini-bars">{ZONE_IDS.map((zoneId) => <span key={zoneId} title={LABELS[zoneId]} style={{ height: `${Math.max(14, (gameState.zones[zoneId].historic_mean / Math.max(gameState.zones[historicLeader].historic_mean, 1)) * 100)}%`, background: zoneId === selectedZone ? '#f2bf24' : 'rgba(237,231,215,.36)' }} />)}</div>
+             <div className="signal-foot"><span /> Store-derived weekday mean</div>
           </section>
 
           <section className="panel signal-panel news-panel">
-            <div className="panel-heading compact"><div><span className="eyebrow">CITY FEED</span><h2>Field notes</h2></div><span className="news-count">{gameState.news.length} NEW</span></div>
-            {gameState.news.map((item) => <button type="button" key={item.headline} className="news-item" onClick={() => setSelectedZone(item.zone_id)}><span className={`news-intensity ${item.intensity}`} /><span><small>{item.age} · {item.zone}</small><b>{item.headline}</b><em>View zone →</em></span></button>)}
-            <div className="news-more">Synthetic scenario feed · live at decision time</div>
+             <div className="panel-heading compact"><div><span className="eyebrow">REGION FEED</span><h2>Field notes</h2></div><span className="news-count">{gameState.news.filter((item) => item.zone_id === selectedZone).length} NEW</span></div>
+             {gameState.news.filter((item) => item.zone_id === selectedZone).map((item) => <button type="button" key={item.headline} className="news-item" onClick={() => setSelectedZone(item.zone_id)}><span className={`news-intensity ${item.intensity}`} /><span><small>{item.age} · {item.zone}</small><b>{item.headline}</b><em>Selected region →</em></span></button>)}
+             {!gameState.news.some((item) => item.zone_id === selectedZone) && <div className="news-more">No field notes for {LABELS[selectedZone]}.</div>}
+             <div className="news-more">Regional scenario feed · live at decision time</div>
           </section>
         </aside>
       </div>

@@ -25,6 +25,16 @@ def test_health_check() -> None:
     }
 
 
+def test_game_state_includes_weekday_means_and_regional_weather() -> None:
+    response = client.get("/api/game/state")
+
+    assert response.status_code == 200
+    state = response.json()
+    assert state["weekday_label"] == "FRIDAY"
+    assert state["zones"]["midtown"]["historic_mean"] == 40.0
+    assert state["zones"]["midtown"]["weather"]["temperature_c"] == 17
+
+
 def test_root_fallback_when_dist_missing(tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist"
     fallback_client = TestClient(create_app(missing))

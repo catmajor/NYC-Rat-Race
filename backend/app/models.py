@@ -17,6 +17,9 @@ ZONE_IDS: Tuple[str, ...] = (
     "south_brooklyn",
     "queens_west",
     "airports",
+    "queens_east",
+    "bronx",
+    "staten_island",
 )
 
 
