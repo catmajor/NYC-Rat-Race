@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 import math
 import random
-from typing import Dict, List, Mapping
+from typing import Dict, List, Mapping, Optional
 
 from .models import ZONE_IDS
 
@@ -160,6 +160,12 @@ class GameSession:
     score: int = 0
     idle_taxis: Dict[str, int] = field(default_factory=lambda: dict(INITIAL_ALLOCATION))
     completed: bool = False
+    rounds_completed: int = 0
+    total_trips_captured: int = 0
+    total_net_revenue: float = 0.0
+    total_model_match: int = 0
+    best_model_match: int = 0
+    game_over_reason: Optional[str] = None
 
     def __post_init__(self) -> None:
         self._profile = _profile_for(self.round_number, self.day)
@@ -179,6 +185,12 @@ class GameSession:
         self.score = 0
         self.idle_taxis = dict(INITIAL_ALLOCATION)
         self.completed = False
+        self.rounds_completed = 0
+        self.total_trips_captured = 0
+        self.total_net_revenue = 0.0
+        self.total_model_match = 0
+        self.best_model_match = 0
+        self.game_over_reason = None
         self._profile = _profile_for(self.round_number, self.day)
 
     def state(self) -> Dict[str, object]:
@@ -219,6 +231,12 @@ class GameSession:
             "assigned": self.fleet_available,
             "currency": round(self.currency, 2),
             "score": self.score,
+            "rounds_completed": self.rounds_completed,
+            "total_trips_captured": self.total_trips_captured,
+            "total_net_revenue": round(self.total_net_revenue, 2),
+            "average_model_match": round(self.total_model_match / self.rounds_completed, 1) if self.rounds_completed else 0.0,
+            "best_model_match": self.best_model_match,
+            "game_over_reason": self.game_over_reason,
             "zones": zones,
             "weather": weather,
             "events": profile["events"],
@@ -257,6 +275,11 @@ class GameSession:
         score_gain = max(0, round(net_revenue + match_percentage * 3))
         self.currency = round(self.currency + net_revenue, 2)
         self.score += score_gain
+        self.rounds_completed += 1
+        self.total_trips_captured += trips_captured
+        self.total_net_revenue = round(self.total_net_revenue + net_revenue, 2)
+        self.total_model_match += match_percentage
+        self.best_model_match = max(self.best_model_match, match_percentage)
 
         result = {
             "day": self.day,
@@ -280,6 +303,7 @@ class GameSession:
         if self.round_number == 4:
             if self.day == 3:
                 self.completed = True
+                self.game_over_reason = "turns_complete"
             else:
                 self.day += 1
                 self.round_number = 1
@@ -289,6 +313,13 @@ class GameSession:
         if not self.completed:
             self._profile = _profile_for(self.round_number, self.day)
         return result
+
+    def timeout(self) -> None:
+        """End the run without advancing when the decision clock expires."""
+        if self.completed:
+            raise ValueError("This game is already complete")
+        self.completed = True
+        self.game_over_reason = "time_expired"
 
 
 SESSION = GameSession()

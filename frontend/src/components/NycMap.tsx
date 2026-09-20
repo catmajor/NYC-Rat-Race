@@ -6,7 +6,7 @@ import { LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core'
 import { GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers'
 import { ScenegraphLayer } from '@deck.gl/mesh-layers'
 import { RatRouter } from '../lib/ratRouter'
-import { zoneAt, polygonCentroid, type TaxiZone } from '../lib/zones'
+import { polygonCentroid, type TaxiZone } from '../lib/zones'
 
 // Tune-by-eye constants (visual calibration happens in the browser):
 export const RAT_SIZE_SCALE = 50// rat.glb is ~1 world unit; this makes the rat
@@ -73,15 +73,15 @@ const MAP_STYLE: StyleSpecification = {
   version: 8,
   glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: {
-    carto: {
+    osm: {
       type: 'raster',
-      tiles: ['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'],
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
       tileSize: 256,
-      attribution: '© OpenStreetMap contributors, © CARTO',
+      attribution: '© OpenStreetMap contributors',
     },
   },
   layers: [
-    { id: 'carto-basemap', type: 'raster', source: 'carto' },
+    { id: 'osm-basemap', type: 'raster', source: 'osm' },
   ],
 }
 
@@ -91,11 +91,22 @@ interface RatPose {
   heading: number
 }
 
-export default function NycMap() {
+export interface NycMapProps {
+  allocationByZone?: Record<string, number>
+  selectedZone?: string | null
+  onZoneSelect?: (zoneId: string) => void
+}
+
+export default function NycMap({
+  allocationByZone = {},
+  selectedZone = null,
+  onZoneSelect,
+}: NycMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<MapboxOverlay | null>(null)
   const routerRef = useRef<RatRouter | null>(null)
   const zonesRef = useRef<TaxiZone[]>([])
+  const regionCentroidsRef = useRef<Record<string, { lon: number; lat: number }>>({})
   const regionsLayerRef = useRef<GeoJsonLayer | null>(null)
   // Building data is kept separate from the layer so the layer can be rebuilt
   // with a different `visible` flag on zoom-gate crossings. Rebuilding preserves
@@ -106,11 +117,17 @@ export default function NycMap() {
   const zoomRef = useRef(11.4)
   const poseRef = useRef<RatPose>({ lon: -73.985, lat: 40.755, heading: 0 })
   const footstepsRef = useRef<Array<{ lon: number; lat: number; born: number }>>([])
+  const allocationRef = useRef(allocationByZone)
+  const selectedZoneRef = useRef(selectedZone)
+  const onZoneSelectRef = useRef(onZoneSelect)
 
-  const [status, setStatus] = useState<string>('loading map…')
-  const [inZone, setInZone] = useState<string>('')
-  const [inBorough, setInBorough] = useState<string>('')
   const [hovered, setHovered] = useState<string | null>(null)
+
+  useEffect(() => {
+    allocationRef.current = allocationByZone
+    selectedZoneRef.current = selectedZone
+    onZoneSelectRef.current = onZoneSelect
+  }, [allocationByZone, onZoneSelect, selectedZone])
 
   useEffect(() => {
     const container = containerRef.current
@@ -243,6 +260,28 @@ export default function NycMap() {
       })
     }
 
+    const makeFleetLayer = (): ScenegraphLayer | null => {
+      const data = Object.entries(regionCentroidsRef.current).flatMap(([zoneId, center]) => {
+        const count = Math.min(7, Math.ceil((allocationRef.current[zoneId] ?? 0) / 5))
+        return Array.from({ length: count }, (_, index) => ({
+          lon: center.lon + ((index % 3) - 1) * 0.0032,
+          lat: center.lat + (Math.floor(index / 3) - 1) * 0.0023,
+          heading: (index * 47 + zoneId.length * 11) % 360,
+        }))
+      })
+      if (!data.length) return null
+      return new ScenegraphLayer({
+        id: 'fleet-rats',
+        data,
+        scenegraph: RAT_URL,
+        getPosition: (d) => [d.lon, d.lat],
+        getTransformMatrix: (d) => ratModelMatrix(d.heading),
+        sizeScale: RAT_SIZE_SCALE * 0.52,
+        _lighting: 'pbr',
+        getColor: () => [244, 192, 22, 255],
+      })
+    }
+
     const makeFootstepsLayer = (): ScatterplotLayer => {
       const now = performance.now()
       // Keep only live dots, fading alpha + radius with age. The layer is
@@ -280,6 +319,7 @@ export default function NycMap() {
       const showTiles = zoomRef.current >= 12
       return [
         makeRatLayer(pose),
+        makeFleetLayer(),
         makeFootstepsLayer(),
         makeBuildingsLayer(showTiles),
         regionsLayerRef.current,
@@ -345,6 +385,9 @@ export default function NycMap() {
           properties: { name: f.properties.name },
           geometry: f.geometry,
         }))
+        for (const feature of regionsDoc.features) {
+          regionCentroidsRef.current[feature.properties.name] = polygonCentroid(feature.geometry)
+        }
         regionsLayerRef.current = new GeoJsonLayer({
           id: 'regions',
           data: regionFeatures as any,
@@ -356,7 +399,11 @@ export default function NycMap() {
           lineWidthMinPixels: 1.5,
           getFillColor: (f: { properties: { name: string } }) => {
             const c = REGION_COLORS[f.properties.name] ?? [160, 160, 160]
-            return [c[0], c[1], c[2], 45]
+            const selected = selectedZoneRef.current === f.properties.name
+            const taxis = allocationRef.current[f.properties.name] ?? 0
+            return selected
+              ? [245, 194, 24, 150]
+              : [c[0], c[1], c[2], Math.min(125, 32 + taxis * 2)]
           },
           getLineColor: (f: { properties: { name: string } }) => {
             const c = REGION_COLORS[f.properties.name] ?? [200, 200, 200]
@@ -365,6 +412,10 @@ export default function NycMap() {
           onHover: (info) => {
             const r = info.object?.properties?.name as string | undefined
             setHovered(r ? r.replace(/_/g, ' ') : null)
+          },
+          onClick: (info) => {
+            const r = info.object?.properties?.name as string | undefined
+            if (r) onZoneSelectRef.current?.(r)
           },
         })
 
@@ -376,12 +427,10 @@ export default function NycMap() {
         routerRef.current = router
         const p = router.position
         poseRef.current = { lon: p.lon, lat: p.lat, heading: 0 }
-        setStatus(`roaming ${router.nodeCount.toLocaleString()} road nodes`)
         overlay.setProps({ layers: baseLayers(poseRef.current) })
         rafId = requestAnimationFrame(tick)
       } catch (err) {
         console.error(err)
-        setStatus(`failed to load: ${String(err)}`)
       }
     }
 
@@ -395,35 +444,9 @@ export default function NycMap() {
     }
   }, [])
 
-  // Update the HUD a few times per second, not every frame.
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      const router = routerRef.current
-      if (!router) return
-      const z = zoneAt(zonesRef.current, poseRef.current.lon, poseRef.current.lat)
-      setInZone(z ? z.zone : '—')
-      setInBorough(z ? z.borough : '')
-      setStatus('roaming')
-    }, 400)
-    return () => window.clearInterval(id)
-  }, [])
-
   return (
     <>
       <div ref={containerRef} className="map-container" />
-      <div className="hud">
-        <div className="hud-row">
-          <span className="hud-label">ZONE</span>
-          <span className="hud-value">{inZone || '—'}</span>
-          <span className="hud-sub">{inBorough}</span>
-        </div>
-        <div className="hud-row">
-          <span className="hud-label">UNIT</span>
-          <span className="hud-value">RAT-01</span>
-          <span className="hud-sub">{status}</span>
-        </div>
-        <div className="hud-credit">buildings © Overture / ODbL</div>
-      </div>
       {hovered && <div className="tooltip">{hovered}</div>}
     </>
   )

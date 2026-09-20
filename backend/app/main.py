@@ -38,6 +38,11 @@ class GameAdvanceRequest(BaseModel):
     allocation: Dict[str, int]
 
 
+class GameTimeoutRequest(BaseModel):
+    day: int = Field(ge=1, le=3)
+    round: int = Field(ge=1, le=4)
+
+
 # The Don is intentionally not listed here yet: the canonical MVP spec makes
 # it a later mixture-of-experts adviser built on the four individual rats.
 ADVISER_AGENTS = {
@@ -209,6 +214,17 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"result": result, "state": SESSION.state(), "zones": list(ZONE_IDS)}
+
+    @app.post("/api/game/timeout", tags=["game"])
+    def timeout_game(request: GameTimeoutRequest) -> Dict[str, object]:
+        """End the current run when the player misses the decision window."""
+        if request.day != SESSION.day or request.round != SESSION.round_number:
+            raise HTTPException(status_code=409, detail="This round is no longer current")
+        try:
+            SESSION.timeout()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"state": SESSION.state(), "zones": list(ZONE_IDS)}
 
     if frontend_dist is None:
         frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
