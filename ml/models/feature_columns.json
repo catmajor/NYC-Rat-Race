@@ -1,9 +1,6 @@
 {
   "features": [
     "hour",
-    "dow",
-    "month",
-    "dayofyear",
     "temp_c",
     "wind_ms",
     "vis_km",

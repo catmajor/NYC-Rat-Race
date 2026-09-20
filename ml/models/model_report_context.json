@@ -1,9 +1,6 @@
 {
   "feature_order": [
     "hour",
-    "dow",
-    "month",
-    "dayofyear",
     "temp_c",
     "wind_ms",
     "vis_km",
@@ -59,126 +56,45 @@
   "models": {
     "mean": {
       "alpha": null,
-      "best_iter": 278,
+      "best_iter": 87,
       "importance": {
         "gain": {
-          "avg_goldstein": 15275558160.0,
-          "avg_tone": 12758138918.0,
-          "dayofyear": 86879771295.0,
-          "dow": 171040636074.0,
-          "event_count": 35518523234.0,
-          "event_mentions": 26297116333.0,
-          "horizon": 64136042447.0,
-          "hour": 437797781994.0,
-          "month": 6322684482.0,
-          "precip_3h_mm": 9299488911.0,
-          "precip_mm": 7052674617.0,
-          "temp_c": 44634759666.0,
-          "vis_km": 89680996407.0,
-          "wind_ms": 237591675223.0,
-          "zone_id": 3395788771316.0
+          "avg_goldstein": 18491345980.0,
+          "avg_tone": 24951727064.0,
+          "event_count": 64999462916.0,
+          "event_mentions": 40134667736.0,
+          "horizon": 30701699380.0,
+          "hour": 380264655516.0,
+          "precip_3h_mm": 11003027320.0,
+          "precip_mm": 7565925788.0,
+          "temp_c": 58887249068.0,
+          "vis_km": 58959267836.0,
+          "wind_ms": 357121057660.0,
+          "zone_id": 3305576321892.0
         },
         "split": {
-          "avg_goldstein": 1265,
-          "avg_tone": 1062,
-          "dayofyear": 2445,
-          "dow": 1377,
-          "event_count": 1294,
-          "event_mentions": 937,
-          "horizon": 763,
-          "hour": 1511,
-          "month": 358,
-          "precip_3h_mm": 446,
-          "precip_mm": 512,
-          "temp_c": 1657,
-          "vis_km": 464,
-          "wind_ms": 1225,
-          "zone_id": 1920
+          "avg_goldstein": 441,
+          "avg_tone": 500,
+          "event_count": 716,
+          "event_mentions": 552,
+          "horizon": 330,
+          "hour": 543,
+          "precip_3h_mm": 154,
+          "precip_mm": 112,
+          "temp_c": 656,
+          "vis_km": 191,
+          "wind_ms": 579,
+          "zone_id": 620
         },
         "top10": [
           "zone_id",
           "hour",
           "wind_ms",
-          "dow",
+          "event_count",
           "vis_km",
-          "dayofyear",
-          "horizon",
           "temp_c",
-          "event_count",
-          "event_mentions"
-        ]
-      },
-      "metrics": {
-        "by_horizon": {
-          "1": {
-            "mae": 512.0004914850165,
-            "n": 3312,
-            "rmse": 757.5774156680839
-          },
-          "2": {
-            "mae": 509.0601270603004,
-            "n": 3312,
-            "rmse": 752.9003864602439
-          },
-          "3": {
-            "mae": 521.5292958075119,
-            "n": 3312,
-            "rmse": 775.6226289600139
-          }
-        },
-        "mae": 514.1966381176096,
-        "rmse": 762.096449542786
-      },
-      "name": "mean",
-      "objective": "regression"
-    },
-    "p10": {
-      "alpha": 0.1,
-      "best_iter": 354,
-      "importance": {
-        "gain": {
-          "avg_goldstein": 3160.8607,
-          "avg_tone": 3418.4543,
-          "dayofyear": 10125.0269,
-          "dow": 10645.1818,
-          "event_count": 3754.0811,
-          "event_mentions": 3099.9795,
-          "horizon": 4572.8964,
-          "hour": 12248.5928,
-          "month": 1381.957,
-          "precip_3h_mm": 1246.6469,
-          "precip_mm": 1335.2527,
-          "temp_c": 4993.9457,
-          "vis_km": 2666.4356,
-          "wind_ms": 5525.6248,
-          "zone_id": 35801.4014
-        },
-        "split": {
-          "avg_goldstein": 1423,
-          "avg_tone": 1499,
-          "dayofyear": 3123,
-          "dow": 1585,
-          "event_count": 1505,
-          "event_mentions": 1254,
-          "horizon": 1011,
-          "hour": 1522,
-          "month": 491,
-          "precip_3h_mm": 617,
-          "precip_mm": 597,
-          "temp_c": 2108,
-          "vis_km": 652,
-          "wind_ms": 1918,
-          "zone_id": 2643
-        },
-        "top10": [
-          "zone_id",
-          "hour",
-          "dow",
-          "dayofyear",
-          "wind_ms",
-          "temp_c",
+          "event_mentions",
           "horizon",
-          "event_count",
           "avg_tone",
           "avg_goldstein"
         ]
@@ -186,179 +102,236 @@
       "metrics": {
         "by_horizon": {
           "1": {
-            "mae": 757.6333820707375,
+            "mae": 762.8810983360058,
             "n": 3312,
-            "rmse": 1060.0469072392382
+            "rmse": 1084.7217259136346
           },
           "2": {
-            "mae": 802.4749117733916,
+            "mae": 690.4474929477568,
             "n": 3312,
-            "rmse": 1207.4150581788776
+            "rmse": 1011.0266168664673
           },
           "3": {
-            "mae": 799.4894156605146,
+            "mae": 679.6230218587716,
             "n": 3312,
-            "rmse": 1247.6719392998882
+            "rmse": 1013.4247734784112
           }
         },
-        "coverage": 0.1751207729468599,
-        "mae": 786.5325698348813,
-        "pinball": 122.20934479515908,
-        "rmse": 1174.4836931436325
+        "mae": 710.9838710475115,
+        "rmse": 1036.954806823209
+      },
+      "name": "mean",
+      "objective": "regression"
+    },
+    "p10": {
+      "alpha": 0.1,
+      "best_iter": 134,
+      "importance": {
+        "gain": {
+          "avg_goldstein": 3318.727,
+          "avg_tone": 3098.3665,
+          "event_count": 3943.6109,
+          "event_mentions": 3371.4522,
+          "horizon": 1855.9145,
+          "hour": 7181.2757,
+          "precip_3h_mm": 655.9288,
+          "precip_mm": 842.0462,
+          "temp_c": 3361.3048,
+          "vis_km": 1947.4852,
+          "wind_ms": 3532.9643,
+          "zone_id": 27783.9105
+        },
+        "split": {
+          "avg_goldstein": 993,
+          "avg_tone": 964,
+          "event_count": 988,
+          "event_mentions": 922,
+          "horizon": 373,
+          "hour": 553,
+          "precip_3h_mm": 209,
+          "precip_mm": 208,
+          "temp_c": 910,
+          "vis_km": 327,
+          "wind_ms": 713,
+          "zone_id": 1148
+        },
+        "top10": [
+          "zone_id",
+          "hour",
+          "event_count",
+          "wind_ms",
+          "event_mentions",
+          "temp_c",
+          "avg_goldstein",
+          "avg_tone",
+          "vis_km",
+          "horizon"
+        ]
+      },
+      "metrics": {
+        "by_horizon": {
+          "1": {
+            "mae": 1288.7616071227003,
+            "n": 3312,
+            "rmse": 1807.213358849921
+          },
+          "2": {
+            "mae": 1283.904770054409,
+            "n": 3312,
+            "rmse": 1867.3023872082185
+          },
+          "3": {
+            "mae": 1203.7329802461213,
+            "n": 3312,
+            "rmse": 1819.9112545752246
+          }
+        },
+        "coverage": 0.09158615136876007,
+        "mae": 1258.7997858077433,
+        "pinball": 152.32058889195784,
+        "rmse": 1831.6582017586045
       },
       "name": "p10",
       "objective": "quantile"
     },
     "p50": {
       "alpha": 0.5,
-      "best_iter": 745,
+      "best_iter": 90,
       "importance": {
         "gain": {
-          "avg_goldstein": 12239.5904,
-          "avg_tone": 12744.4249,
-          "dayofyear": 31024.4143,
-          "dow": 31660.9219,
-          "event_count": 15694.964,
-          "event_mentions": 12414.5078,
-          "horizon": 19533.0785,
-          "hour": 37303.4601,
-          "month": 4348.4777,
-          "precip_3h_mm": 5703.6723,
-          "precip_mm": 4865.3329,
-          "temp_c": 20225.0969,
-          "vis_km": 7506.1031,
-          "wind_ms": 24248.8874,
-          "zone_id": 189343.7188
+          "avg_goldstein": 3673.3043,
+          "avg_tone": 4999.6399,
+          "event_count": 8428.9752,
+          "event_mentions": 6310.543,
+          "horizon": 6004.0373,
+          "hour": 17912.6603,
+          "precip_3h_mm": 1125.3673,
+          "precip_mm": 944.8621,
+          "temp_c": 6514.2739,
+          "vis_km": 1970.8015,
+          "wind_ms": 16568.9025,
+          "zone_id": 152002.1189
         },
         "split": {
-          "avg_goldstein": 3412,
-          "avg_tone": 3389,
-          "dayofyear": 5053,
-          "dow": 2618,
-          "event_count": 3223,
-          "event_mentions": 2841,
-          "horizon": 1464,
-          "hour": 2805,
-          "month": 930,
-          "precip_3h_mm": 1858,
-          "precip_mm": 1614,
-          "temp_c": 5272,
-          "vis_km": 1939,
-          "wind_ms": 4961,
-          "zone_id": 4811
+          "avg_goldstein": 453,
+          "avg_tone": 566,
+          "event_count": 725,
+          "event_mentions": 594,
+          "horizon": 367,
+          "hour": 556,
+          "precip_3h_mm": 140,
+          "precip_mm": 120,
+          "temp_c": 535,
+          "vis_km": 175,
+          "wind_ms": 554,
+          "zone_id": 795
         },
         "top10": [
           "zone_id",
           "hour",
-          "dow",
-          "dayofyear",
           "wind_ms",
-          "temp_c",
-          "horizon",
           "event_count",
+          "temp_c",
+          "event_mentions",
+          "horizon",
           "avg_tone",
-          "event_mentions"
+          "avg_goldstein",
+          "vis_km"
         ]
       },
       "metrics": {
         "by_horizon": {
           "1": {
-            "mae": 504.05944804326924,
+            "mae": 737.9564479325966,
             "n": 3312,
-            "rmse": 772.4856188635252
+            "rmse": 1098.166976144883
           },
           "2": {
-            "mae": 508.3273735073736,
+            "mae": 693.2768636073694,
             "n": 3312,
-            "rmse": 782.195936070681
+            "rmse": 1046.2372328682188
           },
           "3": {
-            "mae": 521.3996127320552,
+            "mae": 694.5909319001181,
             "n": 3312,
-            "rmse": 800.2883682714626
+            "rmse": 1068.3424364667226
           }
         },
-        "coverage": 0.44605475040257647,
-        "mae": 511.2621447608993,
-        "pinball": 255.63107238044964,
-        "rmse": 785.0745158151236
+        "coverage": 0.39794685990338163,
+        "mae": 708.6080811466948,
+        "pinball": 354.3040405733474,
+        "rmse": 1071.1269169260627
       },
       "name": "p50",
       "objective": "quantile"
     },
     "p90": {
       "alpha": 0.9,
-      "best_iter": 674,
+      "best_iter": 172,
       "importance": {
         "gain": {
-          "avg_goldstein": 3559.3848,
-          "avg_tone": 3734.1034,
-          "dayofyear": 6876.6981,
-          "dow": 6504.3504,
-          "event_count": 4451.224,
-          "event_mentions": 3935.0785,
-          "horizon": 4386.7219,
-          "hour": 7921.1817,
-          "month": 1174.3953,
-          "precip_3h_mm": 1857.7143,
-          "precip_mm": 1863.3628,
-          "temp_c": 6937.5346,
-          "vis_km": 3040.953,
-          "wind_ms": 8028.9279,
-          "zone_id": 49929.4975
+          "avg_goldstein": 2406.4803,
+          "avg_tone": 2276.194,
+          "event_count": 3758.4733,
+          "event_mentions": 2627.9004,
+          "horizon": 2065.2593,
+          "hour": 6071.986,
+          "precip_3h_mm": 907.0447,
+          "precip_mm": 759.4817,
+          "temp_c": 3428.8463,
+          "vis_km": 1241.1503,
+          "wind_ms": 5884.0909,
+          "zone_id": 39958.3783
         },
         "split": {
-          "avg_goldstein": 2973,
-          "avg_tone": 3146,
-          "dayofyear": 4293,
-          "dow": 2104,
-          "event_count": 3082,
-          "event_mentions": 2673,
-          "horizon": 1596,
-          "hour": 2143,
-          "month": 826,
-          "precip_3h_mm": 1727,
-          "precip_mm": 1638,
-          "temp_c": 5053,
-          "vis_km": 1900,
-          "wind_ms": 4710,
-          "zone_id": 3924
+          "avg_goldstein": 1126,
+          "avg_tone": 1027,
+          "event_count": 1362,
+          "event_mentions": 1034,
+          "horizon": 519,
+          "hour": 709,
+          "precip_3h_mm": 420,
+          "precip_mm": 336,
+          "temp_c": 1360,
+          "vis_km": 379,
+          "wind_ms": 1226,
+          "zone_id": 1166
         },
         "top10": [
           "zone_id",
-          "wind_ms",
           "hour",
-          "temp_c",
-          "dayofyear",
-          "dow",
+          "wind_ms",
           "event_count",
-          "horizon",
+          "temp_c",
           "event_mentions",
-          "avg_tone"
+          "avg_goldstein",
+          "avg_tone",
+          "horizon",
+          "vis_km"
         ]
       },
       "metrics": {
         "by_horizon": {
           "1": {
-            "mae": 650.4478568305601,
+            "mae": 1067.8653965641565,
             "n": 3312,
-            "rmse": 987.8642536608108
+            "rmse": 1524.402271256663
           },
           "2": {
-            "mae": 639.5572697024755,
+            "mae": 971.016371630116,
             "n": 3312,
-            "rmse": 956.9417734786591
+            "rmse": 1355.1546387706544
           },
           "3": {
-            "mae": 617.7288203191747,
+            "mae": 938.5892869797323,
             "n": 3312,
-            "rmse": 926.496358470838
+            "rmse": 1281.5357685845133
           }
         },
-        "coverage": 0.714975845410628,
-        "mae": 635.9113156174035,
-        "pinball": 171.44416820416657,
-        "rmse": 957.4286472542024
+        "coverage": 0.8253824476650563,
+        "mae": 992.4903517246682,
+        "pinball": 167.56250741547933,
+        "rmse": 1390.752830395058
       },
       "name": "p90",
       "objective": "quantile"

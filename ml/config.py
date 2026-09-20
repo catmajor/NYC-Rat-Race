@@ -114,10 +114,11 @@ EVENTS_LAG_DAYS = 1
 #   (lags back to 2 h, trailing windows, rolling means, neighbour zones).
 #   Used for offline experiments and back-casting only.
 #
-# * ``context`` -- the game model (``VARIANT``). There is NO demand
-#   information at all: forecasts come purely from the time/calendar structure,
-#   weather at the cutoff and citywide news (GDELT events lagged one day).
-#   Players know NYC taxi seasonality but see no trip data.
+# * ``context`` -- the game model (``VARIANT``). There is NO demand and NO
+#   date/season information: forecasts come purely from the time-of-day
+#   (hour), weather at the cutoff and citywide news (GDELT events lagged one
+#   day). Players know the intraday NYC taxi rhythm and the ambient
+#   conditions, but see no trip data and no weekday/season structure.
 #
 # ``FEATURE_ORDER`` is the active variant's columns, persisted to
 # models/feature_columns.json and shared with the backend so ONNX input rows
@@ -162,11 +163,8 @@ FEATURE_ORDER_LIVE: list[str] = [
 ]
 
 FEATURE_ORDER_CONTEXT: list[str] = [
-    # time
+    # time of day
     "hour",
-    "dow",
-    "month",
-    "dayofyear",
     # weather at the cutoff
     "temp_c",
     "wind_ms",
