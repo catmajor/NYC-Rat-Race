@@ -281,6 +281,14 @@ function fallbackAdviser(id: AdviserId, state: GameState): AdviserResponse {
 }
 
 export default function App() {
+  const [gameSessionId] = useState(() => {
+    const storageKey = 'nyc-rat-race-session'
+    const existing = window.sessionStorage.getItem(storageKey)
+    if (existing) return existing
+    const created = crypto.randomUUID()
+    window.sessionStorage.setItem(storageKey, created)
+    return created
+  })
   const [gameState, setGameState] = useState<GameState>(() => makeFallbackState())
   const [allocation, setAllocation] = useState<Record<ZoneId, number>>(() => allocationFromState(makeFallbackState()))
   const [activeAdviser, setActiveAdviser] = useState<AdviserId>('twitch')
@@ -293,11 +301,14 @@ export default function App() {
   const [dispatchRun, setDispatchRun] = useState<DispatchRun | null>(null)
   const [dispatchProgress, setDispatchProgress] = useState(0)
   const [apiConnected, setApiConnected] = useState(true)
+  const [stateLoaded, setStateLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const allocationRef = useRef(allocation)
   const dispatchRef = useRef<() => void>(() => undefined)
   const timeoutRef = useRef<() => void>(() => undefined)
   const timeoutTriggeredRef = useRef(false)
+  const gameRequestInFlightRef = useRef(false)
+  const gameHeaders = { 'X-Rat-Race-Session': gameSessionId }
 
   const assigned = Object.values(allocation).reduce((sum, value) => sum + value, 0)
   const remaining = gameState.fleet_available - assigned
@@ -320,7 +331,7 @@ export default function App() {
 
   const loadState = useCallback(async () => {
     try {
-      const response = await fetch('/api/game/state')
+      const response = await fetch('/api/game/state', { headers: gameHeaders })
       if (!response.ok) throw new Error('state request failed')
       const nextState = await response.json() as GameState
       setGameState(nextState)
@@ -329,8 +340,10 @@ export default function App() {
     } catch {
       setApiConnected(false)
       setGameState(makeFallbackState())
+    } finally {
+      setStateLoaded(true)
     }
-  }, [])
+  }, [gameSessionId])
 
   useEffect(() => {
     void loadState()
@@ -390,13 +403,14 @@ export default function App() {
   }, [gameState])
 
   const dispatch = useCallback(async () => {
-    if (isDispatching || gameState.completed) return
+    if (!stateLoaded || isDispatching || gameState.completed || gameRequestInFlightRef.current) return
     let nextAllocation = { ...allocationRef.current }
     const unassigned = gameState.fleet_available - Object.values(nextAllocation).reduce((sum, value) => sum + value, 0)
     if (unassigned > 0) {
       setError(`Assign all ${gameState.fleet_available} taxis before dispatch.`)
       return
     }
+    gameRequestInFlightRef.current = true
     setIsDispatching(true)
     setDispatchProgress(0)
     setDispatchRun({ id: Date.now(), allocation: nextAllocation })
@@ -404,7 +418,7 @@ export default function App() {
     try {
       const responsePromise = fetch('/api/game/advance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...gameHeaders },
         body: JSON.stringify({ day: gameState.day, round: gameState.round, allocation: nextAllocation }),
       })
       const [response] = await Promise.all([
@@ -424,19 +438,21 @@ export default function App() {
       setApiConnected(false)
       setError(dispatchError instanceof Error ? dispatchError.message : 'Dispatch failed')
     } finally {
+      gameRequestInFlightRef.current = false
       setDispatchRun(null)
       setIsDispatching(false)
     }
-  }, [gameState, isDispatching])
+  }, [gameHeaders, gameState, isDispatching, stateLoaded])
 
   const endOnTimeout = useCallback(async () => {
-    if (isDispatching || gameState.completed) return
+    if (!stateLoaded || isDispatching || gameState.completed || gameRequestInFlightRef.current) return
+    gameRequestInFlightRef.current = true
     setIsDispatching(true)
     setSecondsLeft(0)
     try {
       const response = await fetch('/api/game/timeout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...gameHeaders },
         body: JSON.stringify({ day: gameState.day, round: gameState.round }),
       })
       if (!response.ok) {
@@ -454,9 +470,10 @@ export default function App() {
       setApiConnected(false)
       setError(timeoutError instanceof Error ? timeoutError.message : 'Decision time expired')
     } finally {
+      gameRequestInFlightRef.current = false
       setIsDispatching(false)
     }
-  }, [gameState, isDispatching])
+  }, [gameHeaders, gameState, isDispatching, stateLoaded])
 
   useEffect(() => {
     dispatchRef.current = dispatch
@@ -495,7 +512,7 @@ export default function App() {
 
   const resetGame = async () => {
     try {
-      const response = await fetch('/api/game/reset', { method: 'POST' })
+      const response = await fetch('/api/game/reset', { method: 'POST', headers: gameHeaders })
       if (!response.ok) throw new Error('reset failed')
       const nextState = await response.json() as GameState
       setGameState(nextState)
@@ -662,7 +679,7 @@ export default function App() {
       <footer className="dispatch-bar">
         <div className="dispatch-state"><span className={`checkmark ${remaining === 0 ? 'complete' : ''}`}>{remaining === 0 ? '✓' : '·'}</span><div><strong>{remaining === 0 ? 'All taxis assigned' : `${remaining} taxis still in depot`}</strong><small>{error ?? 'Target allocation · next block is hidden'}</small></div></div>
         <div className="dispatch-model"><span>MODEL CONFIDENCE</span><b>{Math.round(gameState.model_confidence * 100)}%</b><i style={{ width: `${gameState.model_confidence * 100}%` }} /></div>
-        <button type="button" className="dispatch-button" onClick={() => void dispatch()} disabled={isDispatching || gameState.completed}>{isDispatching ? 'RUNNING…' : isLastRound ? 'RUN COMPLETE' : 'DISPATCH'} <span>→</span></button>
+        <button type="button" className="dispatch-button" onClick={() => void dispatch()} disabled={!stateLoaded || isDispatching || gameState.completed}>{isDispatching ? 'RUNNING…' : isLastRound ? 'RUN COMPLETE' : 'DISPATCH'} <span>→</span></button>
         <span className="advance-label">Advance 3 hours</span>
       </footer>
 

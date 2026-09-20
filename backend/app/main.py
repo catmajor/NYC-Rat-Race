@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -15,12 +15,13 @@ from .config import (
     get_point_in_time_signals,
 )
 from .data import real_weekday_mean
-from .game import SESSION, ZONE_IDS
+from .game import GameSession, SESSION, ZONE_IDS
 from .models import AdviserResponse, HistoricalState
 
 
 _ADVISER_CACHE_MAX = 512
 _adviser_cache: Dict[str, AdviserResponse] = {}
+_game_sessions: Dict[str, GameSession] = {"default": SESSION}
 
 
 class HealthResponse(BaseModel):
@@ -95,10 +96,20 @@ ADVISER_METADATA = {
 }
 
 
-def _game_state() -> Dict[str, object]:
+def _game_for(session_id: Optional[str]) -> GameSession:
+    """Keep browser sessions isolated on warm server instances."""
+    key = (session_id or "default").strip()[:128] or "default"
+    session = _game_sessions.get(key)
+    if session is None:
+        session = GameSession()
+        _game_sessions[key] = session
+    return session
+
+
+def _game_state(session: GameSession) -> Dict[str, object]:
     """Return the game state with store-derived regional context."""
-    state = SESSION.state()
-    means = real_weekday_mean(SESSION.timestamp)
+    state = session.state()
+    means = real_weekday_mean(session.timestamp)
     zones = state["zones"]
     assert isinstance(zones, dict)
     for zone_id in ZONE_IDS:
@@ -108,7 +119,7 @@ def _game_state() -> Dict[str, object]:
             means[zone_id], 1
         )
 
-    state["weekday_label"] = SESSION.timestamp.strftime("%A").upper()
+    state["weekday_label"] = session.timestamp.strftime("%A").upper()
     return state
 
 
@@ -249,37 +260,50 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
         ]
 
     @app.get("/api/game/state", tags=["game"])
-    def game_state() -> Dict[str, object]:
+    def game_state(
+        session_id: Optional[str] = Header(default=None, alias="X-Rat-Race-Session"),
+    ) -> Dict[str, object]:
         """Return the current decision state for the local Rat Cab session."""
-        return _game_state()
+        return _game_state(_game_for(session_id))
 
     @app.post("/api/game/reset", tags=["game"])
-    def reset_game() -> Dict[str, object]:
+    def reset_game(
+        session_id: Optional[str] = Header(default=None, alias="X-Rat-Race-Session"),
+    ) -> Dict[str, object]:
         """Reset the local deterministic simulation to day one."""
-        SESSION.reset()
-        return _game_state()
+        session = _game_for(session_id)
+        session.reset()
+        return _game_state(session)
 
     @app.post("/api/game/advance", tags=["game"])
-    def advance_game(request: GameAdvanceRequest) -> Dict[str, object]:
+    def advance_game(
+        request: GameAdvanceRequest,
+        session_id: Optional[str] = Header(default=None, alias="X-Rat-Race-Session"),
+    ) -> Dict[str, object]:
         """Score one allocation, hide the outcome, and move to the next turn."""
-        if request.day != SESSION.day or request.round != SESSION.round_number:
+        session = _game_for(session_id)
+        if request.day != session.day or request.round != session.round_number:
             raise HTTPException(status_code=409, detail="This round is no longer current")
         try:
-            result = SESSION.advance(request.allocation)
+            result = session.advance(request.allocation)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {"result": result, "state": _game_state(), "zones": list(ZONE_IDS)}
+        return {"result": result, "state": _game_state(session), "zones": list(ZONE_IDS)}
 
     @app.post("/api/game/timeout", tags=["game"])
-    def timeout_game(request: GameTimeoutRequest) -> Dict[str, object]:
+    def timeout_game(
+        request: GameTimeoutRequest,
+        session_id: Optional[str] = Header(default=None, alias="X-Rat-Race-Session"),
+    ) -> Dict[str, object]:
         """End the current run when the player misses the decision window."""
-        if request.day != SESSION.day or request.round != SESSION.round_number:
+        session = _game_for(session_id)
+        if request.day != session.day or request.round != session.round_number:
             raise HTTPException(status_code=409, detail="This round is no longer current")
         try:
-            SESSION.timeout()
+            session.timeout()
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return {"state": _game_state(), "zones": list(ZONE_IDS)}
+        return {"state": _game_state(session), "zones": list(ZONE_IDS)}
 
     if frontend_dist is None:
         frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"

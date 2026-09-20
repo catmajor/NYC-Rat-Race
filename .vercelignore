@@ -1,0 +1,15 @@
+# Runtime data is downloaded from the GitHub Release during the Vercel build.
+data/**
+ml/data/**
+**/*.parquet
+**/*.csv
+**/*.joblib
+
+# Local-only files and generated deployment artifacts.
+frontend/node_modules/**
+frontend/dist/**
+runtime-artifacts.zip
+runtime-artifacts.zip.sha256
+.git/**
+.vercel/**
+**/__pycache__/**

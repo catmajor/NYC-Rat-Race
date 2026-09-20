@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node scripts/fetch-runtime-artifacts.mjs && cd frontend && npm ci && npm run build",
+  "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/index.py": {
+      "memory": 2048,
+      "maxDuration": 60,
+      "excludeFiles": "{data/tlc_nyc/**,frontend/**,backend/tests/**,ml/models/archive_live/**,ml/models/*.joblib,ml/models/*_context.*,ml/models/model_report*.*,ml/models/demand_p50.*,ml/models/demand_context_*,.git/**,**/__pycache__/**,*.md}"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index?route=/api/$1" },
+    { "source": "/health", "destination": "/api/index?route=/health" }
+  ]
+}
