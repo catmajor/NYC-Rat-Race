@@ -39,6 +39,7 @@ function nodeKey(lon: number, lat: number): string {
 export class RatRouter {
   private nodes: RoadNode[] = []
   private readonly nodeGrid = new Map<string, number[]>()
+  private precomputedRoutes = new Map<string, Map<string, RoadPoint[]>>()
   private static readonly GRID_SIZE = 0.005
   private static readonly A_STAR_HEURISTIC_WEIGHT = 2.75
   private pos: RoadPoint
@@ -222,6 +223,16 @@ export class RatRouter {
   /** Return the shortest connected road-node path between two map points. */
   routeBetween(start: RoadPoint, target: RoadPoint): RoadPoint[] {
     return this.aStarRoute(start, target)
+  }
+
+  setPrecomputedRoutes(routes: Record<string, Record<string, RoadPoint[]>>): void {
+    this.precomputedRoutes = new Map(
+      Object.entries(routes).map(([source, destinations]) => [source, new Map(Object.entries(destinations))]),
+    )
+  }
+
+  precomputedRoute(source: string, target: string): RoadPoint[] | null {
+    return this.precomputedRoutes.get(source)?.get(target) ?? null
   }
 
   /** Find a road path with A*, using geographic distance as the heuristic. */

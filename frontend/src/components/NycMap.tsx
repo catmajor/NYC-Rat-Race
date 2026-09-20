@@ -56,6 +56,7 @@ const REGIONS_URL = '/data/regions.geojson'
 // tagged with the custom region (harlem/upper_west/.../airports) they fall in.
 // Attribution required per ODbL: shown in map credits.
 const BUILDINGS_URL = '/data/buildings.geojson'
+const REGION_ROUTES_URL = '/data/region_routes.json'
 // Per-region weather/event instructions (see weather-graphics-handoff.md §4).
 // The game will later emit this instruction object and the map just re-renders;
 // the frontend never hardcodes event→region.
@@ -223,7 +224,9 @@ interface DispatchRat {
   routes: Array<RoadPoint[]>
   routeLengths: number[]
   routeSpeeds: number[]
-  totalRouteDuration: number
+  loopStartIndex: number
+  approachDuration: number
+  loopDuration: number
 }
 
 interface FleetPosition extends RoadPoint {
@@ -502,31 +505,16 @@ export default function NycMap({
 
     const makeDispatchRats = (run: DispatchRun): DispatchRat[] => {
       const rats: DispatchRat[] = []
-      const targetsByZone = new Map<string, RoadPoint[]>()
       const availableParked = [...restingFleetDataRef.current]
       for (const [zoneId, allocation] of Object.entries(run.allocation)) {
         if (allocation <= 0) continue
         const count = Math.max(0, Math.floor(allocation))
         const center = regionCentroidsRef.current[zoneId]
         if (!center) continue
-        let targets = targetsByZone.get(zoneId)
         const regionGeometry = regionGeometryRef.current[zoneId]
         const destinationGeometry = zoneId === 'airports'
           ? airportGeometryRef.current ?? regionGeometry
           : regionGeometry
-        if (!targets) {
-          const seed = hashStr(`${run.id}:${zoneId}`)
-          const fallback: RoadPoint = { lon: center.lon, lat: center.lat }
-          targets = []
-          for (let targetIndex = 0; targetIndex < 6; targetIndex += 1) {
-            const point = pointInRegion(destinationGeometry, seed + targetIndex + 1)
-            const target: RoadPoint = point
-              ? { lon: point[0], lat: point[1] }
-              : fallback
-            targets.push(target)
-          }
-          targetsByZone.set(zoneId, targets)
-        }
         for (let index = 0; index < count; index += 1) {
           const seed = hashStr(`${run.id}:${zoneId}:${index}`)
           const fallback: RoadPoint = { lon: center.lon, lat: center.lat }
@@ -543,12 +531,19 @@ export default function NycMap({
           const routeSpeeds: number[] = []
           let current = origin
           if (!insideDestination) {
-            const target = targets[index % Math.max(targets.length, 1)] ?? fallback
-            const approach = routerRef.current?.aStarRoute(current, target) ?? [current, target]
+            const sourceZone = parkedPosition?.zoneId ?? zoneId
+            const target = zoneId === 'airports' && airportGeometryRef.current
+              ? polygonCentroid(airportGeometryRef.current)
+              : center
+            const precomputed = routerRef.current?.precomputedRoute(sourceZone, zoneId)
+            const approach = precomputed?.length
+              ? [{ lon: current.lon, lat: current.lat }, ...precomputed]
+              : [current, target]
             routes.push(approach)
             routeSpeeds.push(DISPATCH_ASTAR_SPEED_MPS)
             current = approach[approach.length - 1] ?? target
           }
+          const loopStartIndex = routes.length
           for (let segment = routes.length; segment < 10; segment += 1) {
             const walk = routerRef.current?.boundedRandomWalk(
               current,
@@ -561,16 +556,17 @@ export default function NycMap({
             current = walk[walk.length - 1] ?? current
           }
           const routeLengths = routes.map((route) => RatRouter.routeLength(route))
-          const totalRouteDuration = routeLengths.reduce(
-            (sum, length, index) => sum + length / routeSpeeds[index],
-            0,
-          )
+          const routeDurations = routeLengths.map((length, index) => length / routeSpeeds[index])
+          const approachDuration = routeDurations.slice(0, loopStartIndex).reduce((sum, value) => sum + value, 0)
+          const loopDuration = routeDurations.slice(loopStartIndex).reduce((sum, value) => sum + value, 0)
           rats.push({
             zoneId,
             routes,
             routeLengths,
             routeSpeeds,
-            totalRouteDuration,
+            loopStartIndex,
+            approachDuration,
+            loopDuration,
           })
         }
       }
@@ -580,11 +576,16 @@ export default function NycMap({
     const dispatchFleetData = (now: number): FleetPosition[] => {
       const elapsedSeconds = Math.max(0, now - (dispatchAnimationStartedAtRef.current ?? now)) / 1000
       return dispatchRatsRef.current.map((rat) => {
-        let remainingTime = rat.totalRouteDuration
-          ? elapsedSeconds % rat.totalRouteDuration
-          : 0
-        let sampled = RatRouter.pointAlongRouteMeters(rat.routes[0], 0)
-        for (let routeIndex = 0; routeIndex < rat.routes.length; routeIndex += 1) {
+        const inApproach = elapsedSeconds < rat.approachDuration
+        let remainingTime = inApproach
+          ? elapsedSeconds
+          : rat.loopDuration
+            ? (elapsedSeconds - rat.approachDuration) % rat.loopDuration
+            : 0
+        let sampled = RatRouter.pointAlongRouteMeters(rat.routes[rat.loopStartIndex], 0)
+        const firstRoute = inApproach ? 0 : rat.loopStartIndex
+        const lastRoute = inApproach ? rat.loopStartIndex : rat.routes.length
+        for (let routeIndex = firstRoute; routeIndex < lastRoute; routeIndex += 1) {
           const route = rat.routes[routeIndex]
           const length = rat.routeLengths[routeIndex]
           const speed = rat.routeSpeeds[routeIndex]
@@ -1271,6 +1272,13 @@ switch (ev.event) {
         if (!roadsRes.ok) throw new Error(`roads ${roadsRes.status}`)
         const roads = await roadsRes.json()
         const router = RatRouter.fromGeoJson(roads)
+        const routeRes = await fetch(REGION_ROUTES_URL)
+        if (disposed) return
+        if (!routeRes.ok) throw new Error(`region routes ${routeRes.status}`)
+        const routeDoc = await routeRes.json() as {
+          routes: Record<string, Record<string, RoadPoint[]>>
+        }
+        router.setPrecomputedRoutes(routeDoc.routes)
         routerRef.current = router
         const p = router.position
         poseRef.current = { lon: p.lon, lat: p.lat, heading: 0 }
