@@ -4,9 +4,6 @@
     "dow",
     "month",
     "dayofyear",
-    "same_hour_yday",
-    "same_hour_prevwk",
-    "today_total",
     "temp_c",
     "wind_ms",
     "vis_km",
@@ -19,5 +16,5 @@
     "horizon",
     "zone_id"
   ],
-  "variant": "delayed"
+  "variant": "context"
 }

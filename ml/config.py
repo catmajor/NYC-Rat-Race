@@ -26,12 +26,12 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Active gameplay variant (see the Model section below): determines which
 # feature order is shipped to the backend.
-VARIANT = "delayed"
+VARIANT = "context"
 
 
-def train_dataset_path(variant: str = VARIANT) -> Path:
-    """Feature dataset for a pipeline variant (kept separate so variants can coexist)."""
-    return ML_ARTIFACTS / f"train_dataset_{variant}.parquet"
+def train_dataset_path() -> Path:
+    """Full superset dataset used by every variant (unselected columns are ignored)."""
+    return ML_ARTIFACTS / "train_dataset.parquet"
 
 
 def model_report_path(variant: str = VARIANT) -> Path:
@@ -43,7 +43,7 @@ def feature_columns_path(variant: str = VARIANT) -> Path:
 
 
 def model_stem(variant: str = VARIANT) -> str:
-    """File stem for a variant's trained models (e.g. ``demand_delayed``)."""
+    """File stem for a variant's trained models (e.g. ``demand_context``)."""
     return f"demand_{variant}"
 
 # External reference data (TLC zone lookup + geometry). Cached offline.
@@ -114,10 +114,10 @@ EVENTS_LAG_DAYS = 1
 #   (lags back to 2 h, trailing windows, rolling means, neighbour zones).
 #   Used for offline experiments and back-casting only.
 #
-# * ``delayed`` -- the game model (``VARIANT``). Demand is NOT known live:
-#   only day-old information (same-hour yesterday, same hour last week, and
-#   the trailing 24 h total) plus calendar, weather and events. Players bid
-#   without a live taxi feed.
+# * ``context`` -- the game model (``VARIANT``). There is NO demand
+#   information at all: forecasts come purely from the time/calendar structure,
+#   weather at the cutoff and citywide news (GDELT events lagged one day).
+#   Players know NYC taxi seasonality but see no trip data.
 #
 # ``FEATURE_ORDER`` is the active variant's columns, persisted to
 # models/feature_columns.json and shared with the backend so ONNX input rows
@@ -161,16 +161,12 @@ FEATURE_ORDER_LIVE: list[str] = [
     "zone_id",
 ]
 
-FEATURE_ORDER_DELAYED: list[str] = [
+FEATURE_ORDER_CONTEXT: list[str] = [
     # time
     "hour",
     "dow",
     "month",
     "dayofyear",
-    # day-old demand (no live taxi feed)
-    "same_hour_yday",
-    "same_hour_prevwk",
-    "today_total",
     # weather at the cutoff
     "temp_c",
     "wind_ms",
@@ -189,7 +185,7 @@ FEATURE_ORDER_DELAYED: list[str] = [
 
 VARIANTS: dict[str, list[str]] = {
     "live": FEATURE_ORDER_LIVE,
-    "delayed": FEATURE_ORDER_DELAYED,
+    "context": FEATURE_ORDER_CONTEXT,
 }
 
 FEATURE_ORDER: list[str] = VARIANTS[VARIANT]

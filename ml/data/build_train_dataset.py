@@ -5,17 +5,17 @@ three rows -- one per hourly forecast bucket (horizon 1/2/3 hours ahead). All
 features are computed strictly from information available at the cutoff:
 
   * time of day / calendar
-  * demand history: live 15-min lags / rolling / trail / neighbour zones for
-    the ``live`` variant, or day-old demand (same-hour yesterday, same hour
-    last week, trailing 24 h total) for the ``delayed`` game variant
+  * demand history: live 15-min lags / rolling / trail / neighbour zones
+    (used by the ``live`` variant; the game model ignores demand entirely)
   * weather at the cutoff (`precip_3h` = rain over the previous 3 h)
   * GDELT event features from the previous day (no same-day lookahead)
   * `horizon` and numeric `zone_id` (categoricals don't survive ONNX) 
 
 Target is the pickups counted in that single future hour bucket.
 
-Output: ``train_dataset_{variant}.parquet`` split into train / validation /
-holdout, one file per pipeline variant so variants can coexist.
+Output: ``train_dataset.parquet`` -- a full superset of every variant's columns,
+split into train / validation / holdout. Variants simply select their column
+subset at training time.
 """
 from __future__ import annotations
 
@@ -48,42 +48,6 @@ def zone_features(zdf: pd.DataFrame) -> pd.DataFrame:
     out["target_h2"] = s.rolling(4).sum().shift(-7)
     out["target_h3"] = s.rolling(4).sum().shift(-11)
     return out
-
-
-def day_old_features(store: pd.DataFrame) -> pd.DataFrame:
-    """Hourly day-old demand per zone for the ``delayed`` (no-live-snapshot) variant.
-
-    Same-hour demand 24 h and 7 x 24 h ago, plus the trailing 24 h total ending
-    at (but excluding) the cutoff hour. Every value is fully known at the cutoff
-    system time, so point-in-time safety is preserved.
-
-    Returns a wide table of ``game_zone`` x hourly ``ts`` rows.
-    """
-    hourly = store.assign(ts_hr=store["ts"].dt.floor("h"))
-    hourly = hourly.groupby(["game_zone", "ts_hr"], as_index=False)["pickups"].sum()
-
-    parts = []
-    for gz in sorted(config.GAME_ZONES):
-        s = (
-            hourly.loc[hourly.game_zone == gz, ["ts_hr", "pickups"]]
-            .set_index("ts_hr")["pickups"]
-            .sort_index()
-        )
-        # Reindex onto a dense hourly grid so shifts are stable across hours
-        # with zero pickups.
-        s = s.reindex(pd.date_range(s.index.min(), s.index.max(), freq="h"), fill_value=0.0)
-        parts.append(
-            pd.DataFrame(
-                {
-                    "game_zone": gz,
-                    "ts": s.index,
-                    "same_hour_yday": s.shift(24).to_numpy(),
-                    "same_hour_prevwk": s.shift(7 * 24).to_numpy(),
-                    "today_total": s.shift(1).rolling(24).sum().to_numpy(),
-                }
-            )
-        )
-    return pd.concat(parts, ignore_index=True)
 
 
 def neighbour_demand(store: pd.DataFrame) -> pd.DataFrame:
@@ -123,10 +87,8 @@ def neighbour_demand(store: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def build(variant: str | None = None) -> pd.DataFrame:
+def build() -> pd.DataFrame:
     store = load_store()
-    variant = variant or config.VARIANT
-    feature_order = config.VARIANTS[variant]
 
     parts = []
     for gz, zdf in store.groupby("game_zone"):
@@ -140,9 +102,6 @@ def build(variant: str | None = None) -> pd.DataFrame:
     cut = store_feat[
         (store_feat.ts.dt.minute == 0) & (store_feat.ts.dt.hour.isin(config.TURN_HOURS))
     ].copy()
-    # Day-old demand is only needed by the delayed (game) variant, but the rows
-    # are harmless for live and keep this a single code path.
-    cut = cut.merge(day_old_features(store), on=["game_zone", "ts"], how="left")
     cut["hour"] = cut.ts.dt.hour
     cut["dow"] = cut.ts.dt.dayofweek
     cut["month"] = cut.ts.dt.month
@@ -170,17 +129,16 @@ def build(variant: str | None = None) -> pd.DataFrame:
         .astype(str)
     )
 
-    feature_cols = feature_order + ["target", "cutoff", "game_zone", "split"]
-    ds = ds[feature_cols]
+    # Keep every feature column so the dataset is a superset usable by all
+    # variants; each variant picks its subset via its FEATURE_ORDER.
     ds = ds.dropna()
     ds = ds.sort_values(["game_zone", "cutoff", "horizon"]).reset_index(drop=True)
     return ds
 
 
 def main() -> None:
-    variant = config.VARIANT
-    ds = build(variant)
-    out = config.train_dataset_path(variant)
+    ds = build()
+    out = config.train_dataset_path()
     ds.to_parquet(out, index=False)
     print(f"[dataset] wrote {out} ({len(ds):,} rows)")
     print(ds.groupby("split").size().to_string())

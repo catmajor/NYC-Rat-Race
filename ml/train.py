@@ -29,6 +29,18 @@ from .data.build_train_dataset import load_store  # noqa: F401 (re-export conven
 MODELS = {"mean": None, **{k: v for k, v in config.QUANTILE_ALPHAS.items()}}
 
 
+def quantize(df: pd.DataFrame) -> pd.DataFrame:
+    """Round a feature matrix to fp32-representable values.
+
+    The ONNX ``TreeEnsembleRegressor`` compares float32 inputs against float32
+    thresholds. Training on fp32-representable features means LightGBM learns
+    thresholds over exactly the value set ONNX will compare, which keeps
+    native<->ONNX parity tight (a model split on dense float thresholds can
+    otherwise deviate by whole tree branches when inputs are fp32-rounded).
+    """
+    return df.astype(np.float32).astype(np.float64)
+
+
 def load_dataset() -> pd.DataFrame:
     return pd.read_parquet(config.train_dataset_path())
 
@@ -39,7 +51,7 @@ def pinball(y, q, alpha):
 
 
 def fit_split(ds: pd.DataFrame, obj: str, alpha: float | None) -> lgb.LGBMRegressor:
-    X = ds[config.FEATURE_ORDER]
+    X = quantize(ds[config.FEATURE_ORDER])
     y = ds["target"]
 
     # Note: for quantile objectives we must retrain per quantile; LightGBM does
@@ -78,7 +90,8 @@ def evaluate(model: lgb.LGBMRegressor, X, y, ds) -> dict:
 def fit_one(name: str, ds: pd.DataFrame, objective: str, alpha: float | None) -> dict:
     print(f"[train] fitting {name} (objective={objective}, alpha={alpha}) ...", flush=True)
     model = fit_split(ds, objective, alpha)
-    Xh, yh = ds.loc[ds.split == "holdout", config.FEATURE_ORDER], ds.loc[ds.split == "holdout", "target"]
+    Xh = quantize(ds.loc[ds.split == "holdout", config.FEATURE_ORDER])
+    yh = ds.loc[ds.split == "holdout", "target"]
     metrics = evaluate(model, Xh, yh, ds[ds.split == "holdout"])
     if alpha is not None:
         q = model.predict(Xh)
