@@ -48,18 +48,25 @@ const ratModelMatrix = (headingDeg: number): number[] => {
 const RAT_URL = '/rat.glb'
 const ROADS_URL = '/data/nyc_roads.geojson'
 const ZONES_URL = '/data/taxi_zones.geojson'
-// NYC building footprints + Overture heights, pre-extracted to GeoJSON
-// (5 boroughs + EWR, filtered to height >= 10 m). Attribution required per
-// ODbL: shown in map credits.
+const REGIONS_URL = '/data/regions.geojson'
+// NYC building footprints + Overture heights, pre-extracted to GeoJSON and
+// tagged with the custom region (harlem/upper_west/.../airports) they fall in.
+// Attribution required per ODbL: shown in map credits.
 const BUILDINGS_URL = '/data/buildings.geojson'
 
-const BOROUGH_COLORS: Record<string, [number, number, number]> = {
-  Manhattan: [242, 148, 60],
-  Brooklyn: [72, 158, 218],
-  Queens: [106, 199, 108],
-  Bronx: [232, 99, 99],
-  'Staten Island': [167, 140, 222],
-  EWR: [180, 180, 180],
+const REGION_COLORS: Record<string, [number, number, number]> = {
+  harlem: [78, 121, 167],
+  upper_west: [242, 142, 43],
+  upper_east: [225, 87, 89],
+  midtown: [118, 183, 178],
+  downtown: [89, 161, 79],
+  north_brooklyn: [237, 201, 72],
+  south_brooklyn: [176, 122, 161],
+  queens_west: [255, 157, 167],
+  queens_east: [230, 120, 44],
+  airports: [156, 117, 95],
+  bronx: [126, 90, 190],
+  staten_island: [60, 160, 190],
 }
 
 const MAP_STYLE: StyleSpecification = {
@@ -89,7 +96,7 @@ export default function NycMap() {
   const overlayRef = useRef<MapboxOverlay | null>(null)
   const routerRef = useRef<RatRouter | null>(null)
   const zonesRef = useRef<TaxiZone[]>([])
-  const zonesLayerRef = useRef<GeoJsonLayer | null>(null)
+  const regionsLayerRef = useRef<GeoJsonLayer | null>(null)
   // Building data is kept separate from the layer so the layer can be rebuilt
   // with a different `visible` flag on zoom-gate crossings. Rebuilding preserves
   // the same `data` reference, so deck reuses GPU buffers instead of unloading
@@ -172,6 +179,7 @@ export default function NycMap() {
       if (!feats) return null
       const w = window as any
       const heightScale = w.__buildingHeightScale ?? BUILDING_HEIGHT_SCALE
+      if (w.__buildingsDebug) console.log('[buildings] make visible=', visible, 'zoom=', (window as any).__zoomRefGet ? (window as any).__zoomRefGet() : null)
       return new GeoJsonLayer({
         id: 'buildings',
         data: feats as any,
@@ -184,8 +192,8 @@ export default function NycMap() {
         opacity: 0.9,
         getElevation: (f: { properties: { height: number } }) => f.properties.height,
         elevationScale: heightScale,
-        getFillColor: (f: { properties: { borough: string } }) => {
-          const c = BOROUGH_COLORS[f.properties.borough] ?? [170, 170, 170]
+        getFillColor: (f: { properties: { region: string } }) => {
+          const c = REGION_COLORS[f.properties.region] ?? [170, 170, 170]
           return [c[0], c[1], c[2], 200]
         },
         material: {
@@ -269,7 +277,7 @@ export default function NycMap() {
         makeRatLayer(pose),
         makeFootstepsLayer(),
         makeBuildingsLayer(showTiles),
-        zonesLayerRef.current,
+        regionsLayerRef.current,
       ].filter(Boolean)
     }
 
@@ -321,31 +329,37 @@ export default function NycMap() {
         }))
         zonesRef.current = zones
 
-        const features = zones.map((z) => ({
+        const regionsRes = await fetch(REGIONS_URL)
+        if (disposed) return
+        if (!regionsRes.ok) throw new Error(`regions ${regionsRes.status}`)
+        const regionsDoc = (await regionsRes.json()) as {
+          features: Array<{ properties: { name: string }; geometry: GeoJSON.Geometry }>
+        }
+        const regionFeatures = regionsDoc.features.map((f) => ({
           type: 'Feature' as const,
-          properties: z,
-          geometry: z.geometry,
+          properties: { name: f.properties.name },
+          geometry: f.geometry,
         }))
-        zonesLayerRef.current = new GeoJsonLayer({
-          id: 'zones',
-          data: features,
+        regionsLayerRef.current = new GeoJsonLayer({
+          id: 'regions',
+          data: regionFeatures as any,
           pickable: true,
           stroked: true,
           filled: true,
           wireframe: false,
           lineWidthUnits: 'pixels',
-          lineWidthMinPixels: 1,
-          getFillColor: (f) => {
-            const c = BOROUGH_COLORS[f.properties.borough] ?? [160, 160, 160]
-            return [c[0], c[1], c[2], 55]
+          lineWidthMinPixels: 1.5,
+          getFillColor: (f: { properties: { name: string } }) => {
+            const c = REGION_COLORS[f.properties.name] ?? [160, 160, 160]
+            return [c[0], c[1], c[2], 45]
           },
-          getLineColor: (f) => {
-            const c = BOROUGH_COLORS[f.properties.borough] ?? [200, 200, 200]
-            return [c[0], c[1], c[2], 230]
+          getLineColor: (f: { properties: { name: string } }) => {
+            const c = REGION_COLORS[f.properties.name] ?? [200, 200, 200]
+            return [c[0], c[1], c[2], 220]
           },
           onHover: (info) => {
-            const z = info.object?.properties as TaxiZone | undefined
-            setHovered(z ? `${z.zone} · ${z.borough}` : null)
+            const r = info.object?.properties?.name as string | undefined
+            setHovered(r ? r.replace(/_/g, ' ') : null)
           },
         })
 
