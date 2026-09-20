@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from app.advisers import GrandpaAgent, GrandpaRat
 from app.data import InMemoryAnalogueStore
+from app.llm import AdviserDecisionResult
 from app.models import HistoricalEpisode, HistoricalState, ZONE_IDS
 
 
@@ -88,6 +89,14 @@ def test_grandpa_agent_can_use_shared_llm_narrative_generator() -> None:
             assert context["forecast"]["predicted_revenue"] == 1000.0
             return "Grandpa says Midtown has the clearest historical signal."
 
+        def decide(self, context):
+            assert context["horizon_hours"] == 3
+            assert context["forecast"]["predicted_revenue"] == 1000.0
+            return AdviserDecisionResult(
+                text="Grandpa says Midtown has the clearest historical signal.",
+                confidence=0.85,
+            )
+
     target = datetime(2024, 10, 4, 8, 0)
     store = InMemoryAnalogueStore(
         [_episode(target - timedelta(days=7), "midtown")]
@@ -104,3 +113,4 @@ def test_grandpa_agent_can_use_shared_llm_narrative_generator() -> None:
 
     assert response.narrative_source == "test-llm"
     assert response.recommendation.startswith("Grandpa says")
+    assert response.confidence == 0.85

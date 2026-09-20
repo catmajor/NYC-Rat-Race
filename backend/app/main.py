@@ -19,6 +19,10 @@ from .game import SESSION, ZONE_IDS
 from .models import AdviserResponse, HistoricalState
 
 
+_ADVISER_CACHE_MAX = 512
+_adviser_cache: Dict[str, AdviserResponse] = {}
+
+
 class HealthResponse(BaseModel):
     status: str
     service: str
@@ -108,6 +112,30 @@ def _game_state() -> Dict[str, object]:
     return state
 
 
+def _fingerprint(request: AdviserRequest) -> str:
+    """Collapse the full adviser input into a stable cache key.
+
+    Timestamp gives temporal scoping; the numeric state dictionaries capture the
+    point-in-time analyst context. This keeps re-renders and page reloads from
+    burning free-tier Gemini quota or adding latency.
+    """
+
+    def sorted_items(values: Optional[Dict[str, float]]) -> list:
+        if not values:
+            return []
+        return [(str(key), round(float(value), 6)) for key, value in sorted(values.items())]
+
+    parts = [
+        request.timestamp.isoformat(),
+        str(request.max_matches),
+        "|".join(f"{key}={value}" for key, value in sorted_items(request.demand_by_zone)),
+        "|".join(f"{key}={value}" for key, value in sorted_items(request.weather)),
+        "|".join(f"{key}={value}" for key, value in sorted_items(request.events)),
+        "|".join(f"{key}={value}" for key, value in sorted_items(request.idle_taxis_by_zone)),
+    ]
+    return "|".join(parts)
+
+
 def _run_adviser(adviser_id: str, request: AdviserRequest) -> AdviserResponse:
     """Run one specialized adviser against the same point-in-time state."""
     agent_class = ADVISER_AGENTS.get(adviser_id)
@@ -116,6 +144,11 @@ def _run_adviser(adviser_id: str, request: AdviserRequest) -> AdviserResponse:
             status_code=404,
             detail=f"Unknown adviser {adviser_id!r}. Choose from {sorted(ADVISER_AGENTS)}.",
         )
+
+    cache_key = f"{adviser_id}:{_fingerprint(request)}"
+    if cache_key in _adviser_cache:
+        return _adviser_cache[cache_key]
+
     try:
         store, data_source = get_analogue_store()
         narrative_generator = get_narrative_generator()
@@ -156,7 +189,7 @@ def _run_adviser(adviser_id: str, request: AdviserRequest) -> AdviserResponse:
             **request.events,
         },
     )
-    return agent_class(
+    response = agent_class(
         store,
         data_source=data_source,
         narrative_generator=narrative_generator,
@@ -165,6 +198,10 @@ def _run_adviser(adviser_id: str, request: AdviserRequest) -> AdviserResponse:
         idle_taxis_by_zone=request.idle_taxis_by_zone,
         max_matches=request.max_matches,
     )
+    _adviser_cache[cache_key] = response
+    if len(_adviser_cache) > _ADVISER_CACHE_MAX:
+        _adviser_cache.clear()
+    return response
 
 
 def create_app(frontend_dist: Path | None = None) -> FastAPI:

@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Mapping, Optional, Protocol
 
 from .adviser_tools import AdviserTools
 from .data import AnalogueStore
+from .llm import AdviserDecisionResult
 from .models import (
     AdviserEvidence,
     AdviserForecast,
@@ -26,6 +27,10 @@ class NarrativeGenerator(Protocol):
 
     def generate(self, context: Mapping[str, Any]) -> str:
         """Turn verified adviser analysis into natural-language advice."""
+
+    def decide(self, context: Mapping[str, Any]) -> "AdviserDecisionResult":
+        """Turn verified adviser analysis into advice text and a confidence."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -277,12 +282,15 @@ class GrandpaAgent:
             for move in analysis.recommended_moves
         ]
         narrative_source = "template"
+        confidence = analysis.confidence
         narrative = self._narrative(analysis, moves)
         if self.narrative_generator is not None:
             try:
-                narrative = self.narrative_generator.generate(
+                decision = self.narrative_generator.decide(
                     self._narrative_context(state, analysis, typed_evidence, moves)
                 )
+                narrative = decision.text
+                confidence = decision.confidence
                 narrative_source = self.narrative_generator.source
             except Exception as exc:  # pragma: no cover - provider failure path
                 logger.warning("Grandpa narrative generation failed: %s", exc)
@@ -295,7 +303,7 @@ class GrandpaAgent:
             as_of=state.timestamp,
             horizon_hours=3,
             recommendation=narrative,
-            confidence=analysis.confidence,
+            confidence=confidence,
             moves=moves,
             evidence=typed_evidence,
             forecast=AdviserForecast(
@@ -830,11 +838,14 @@ class AdviserAgent:
         ]
         narrative = analysis.short_recommendation
         narrative_source = "template"
+        confidence = analysis.confidence
         if self.narrative_generator is not None:
             try:
-                narrative = self.narrative_generator.generate(
+                decision = self.narrative_generator.decide(
                     self._narrative_context(state, analysis, typed_evidence, moves)
                 )
+                narrative = decision.text
+                confidence = decision.confidence
                 narrative_source = self.narrative_generator.source
             except Exception as exc:  # pragma: no cover - provider failure path
                 logger.warning("%s narrative generation failed: %s", self.rat.name, exc)
@@ -848,7 +859,7 @@ class AdviserAgent:
             as_of=state.timestamp,
             horizon_hours=3,
             recommendation=narrative,
-            confidence=analysis.confidence,
+            confidence=confidence,
             moves=moves,
             evidence=typed_evidence,
             forecast=AdviserForecast(

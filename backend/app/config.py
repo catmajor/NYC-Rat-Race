@@ -8,17 +8,20 @@ import os
 from pathlib import Path
 from typing import Optional, Tuple
 
+from dotenv import load_dotenv
+
 from .data import (
     AnalogueStore,
     TLCAnalogueStore,
     build_demo_analogue_store,
     load_zone_map_csv,
 )
-from .llm import OpenAINarrativeGenerator
+from .llm import GeminiNarrativeGenerator
 from .signals import PointInTimeSignals
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 
 @dataclass(frozen=True)
@@ -39,9 +42,12 @@ class Settings:
         "ml/models/region_polygons.geojson",
     )
     news_scenario: Optional[str] = os.getenv("RAT_RACE_NEWS_SCENARIO")
-    openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
-    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    openai_temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.8"))
+    gemini_api_key: Optional[str] = os.getenv("GOOGLE_API_KEY") or os.getenv(
+        "GEMINI_API_KEY"
+    )
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_temperature: float = float(os.getenv("GEMINI_TEMPERATURE", "0.8"))
+    gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20"))
 
 
 def _resolve_path(value: str) -> Path:
@@ -177,18 +183,20 @@ def get_analogue_store() -> Tuple[AnalogueStore, str]:
 
 
 @lru_cache(maxsize=1)
-def get_narrative_generator() -> Optional[OpenAINarrativeGenerator]:
-    """Create the shared LLM client once for all advisers.
+def get_narrative_generator() -> Optional[GeminiNarrativeGenerator]:
+    """Create the shared Gemini client once for all advisers.
 
-    Without OPENAI_API_KEY, the application deliberately uses the deterministic
-    template fallback so local development does not require network access.
+    Without GEMINI_API_KEY/GOOGLE_API_KEY, the application deliberately uses the
+    deterministic template fallback so local development and tests do not require
+    network access.
     """
 
     settings = Settings()
-    if not settings.openai_api_key:
+    if not settings.gemini_api_key:
         return None
-    return OpenAINarrativeGenerator(
-        api_key=settings.openai_api_key,
-        model=settings.openai_model,
-        temperature=settings.openai_temperature,
+    return GeminiNarrativeGenerator(
+        api_key=settings.gemini_api_key,
+        model=settings.gemini_model,
+        temperature=settings.gemini_temperature,
+        timeout_seconds=settings.gemini_timeout_seconds,
     )

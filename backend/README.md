@@ -61,8 +61,9 @@ export RAT_RACE_NOAA_GLOB='data/noaa_isd_nyc/*.csv'
 export RAT_RACE_GDELT_GLOB='data/gdelt_nyc/events/gdelt_events_nyc_*.parquet'
 ```
 
-Copy `.env.example` to `.env`, add your `OPENAI_API_KEY`, and load it into the
-shell before starting the server:
+Copy `.env.example` to `.env`, add your `GOOGLE_API_KEY` (free Gemini key from
+<https://aistudio.google.com/apikey>), and load it into the shell before
+starting the server:
 
 ```bash
 cp .env.example .env
@@ -73,7 +74,12 @@ uvicorn app.main:app --reload
 
 The API key is server-side only. Never send it to the frontend or commit it.
 All adviser rats use this same client configuration; each rat supplies its own
-personality prompt and analysis context.
+personality prompt and analysis context. The model defaults to
+`gemini-2.5-flash` (free-tier friendly) and is configurable via `GEMINI_MODEL`.
+
+Without a Gemini key, each rat returns a deterministic template response with
+the same contract (`narrative_source: "template"`), so local development does
+not require network access.
 
 The zone-map CSV must contain `LocationID` and `game_zone` columns, with
 `game_zone` set to one of the nine Rat Race zone IDs. This mapping is kept
@@ -185,9 +191,10 @@ Every adviser uses the same response shape:
 ```
 
 Each rat runs its own numerical tools over compact point-in-time data, then
-uses the shared OpenAI client only to turn verified analysis into personality-
-specific natural language. Without `OPENAI_API_KEY`, each rat returns a
-deterministic template response with the same contract.
+uses the shared Gemini client to interpret that verified analysis into
+personality-specific natural language and a confidence value. Without
+`GOOGLE_API_KEY`/`GEMINI_API_KEY`, each rat returns a deterministic template
+response with the same contract.
 
 To fetch one scenario month instead of the entire TLC archive:
 
