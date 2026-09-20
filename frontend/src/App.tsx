@@ -434,6 +434,8 @@ export default function App() {
       setAllocation(allocationFromState(nextState))
       setResult(null)
       setGameOverVisible(false)
+      setSecondsLeft(90)
+      setError(null)
       timeoutTriggeredRef.current = false
       setApiConnected(true)
     } catch {
@@ -442,6 +444,8 @@ export default function App() {
       setAllocation(allocationFromState(nextState))
       setResult(null)
       setGameOverVisible(false)
+      setSecondsLeft(90)
+      setError(null)
       timeoutTriggeredRef.current = false
       setApiConnected(false)
     }
