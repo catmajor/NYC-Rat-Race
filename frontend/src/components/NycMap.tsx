@@ -137,8 +137,10 @@ export default function NycMap() {
     // Overlaid still forwards mouse events to deck picking via map handlers.
     const lighting = new LightingEffect({
       ambient: new AmbientLight({ color: [255, 255, 255], intensity: 1.1 }),
-      sun: new DirectionalLight({ color: [255, 255, 255], intensity: 3.0, direction: [30, 80, 50] }),
-      fill: new DirectionalLight({ color: [255, 214, 170], intensity: 1.0, direction: [-60, -40, -60] }),
+      // Soft, near-flat lighting: one gentle directional light keeps the
+      // extrusion readable as 3D via mild face darkening, without blowing
+      // sun-facing sides to white (sun intensity 3.0 + diffuse 0.75 did that).
+      sun: new DirectionalLight({ color: [255, 255, 255], intensity: 1.0, direction: [50, 90, -35] }),
     })
     const overlay = new MapboxOverlay({ layers: [], effects: [lighting] })
     ;(window as any).__overlay = overlay
@@ -197,10 +199,13 @@ export default function NycMap() {
           return [c[0], c[1], c[2], 200]
         },
         material: {
-          ambient: 0.35,
-          diffuse: 0.75,
-          shininess: 8,
-          specularColor: [60, 60, 60],
+          // Near-flat look: high ambient keeps the color mostly solid, modest
+          // diffuse gives each face just enough brightening/darkening to read
+          // as extruded, no specular so no white glints.
+          ambient: 0.7,
+          diffuse: 0.4,
+          shininess: 0,
+          specularColor: [0, 0, 0],
         },
       })
     }
