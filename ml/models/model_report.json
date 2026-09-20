@@ -1,6 +1,7 @@
 {
   "feature_order": [
     "hour",
+    "dow",
     "temp_c",
     "wind_ms",
     "vis_km",
@@ -56,45 +57,191 @@
   "models": {
     "mean": {
       "alpha": null,
-      "best_iter": 87,
+      "best_iter": 96,
       "importance": {
         "gain": {
-          "avg_goldstein": 18491345980.0,
-          "avg_tone": 24951727064.0,
-          "event_count": 64999462916.0,
-          "event_mentions": 40134667736.0,
-          "horizon": 30701699380.0,
-          "hour": 380264655516.0,
-          "precip_3h_mm": 11003027320.0,
-          "precip_mm": 7565925788.0,
-          "temp_c": 58887249068.0,
-          "vis_km": 58959267836.0,
-          "wind_ms": 357121057660.0,
-          "zone_id": 3305576321892.0
+          "avg_goldstein": 11482859846.0,
+          "avg_tone": 14083823616.0,
+          "dow": 160676634000.0,
+          "event_count": 45746813440.0,
+          "event_mentions": 20264618932.0,
+          "horizon": 64676736424.0,
+          "hour": 408813774560.0,
+          "precip_3h_mm": 6568491202.0,
+          "precip_mm": 6884915328.0,
+          "temp_c": 49297426830.0,
+          "vis_km": 35665323632.0,
+          "wind_ms": 94383838600.0,
+          "zone_id": 3612096425562.0
         },
         "split": {
-          "avg_goldstein": 441,
-          "avg_tone": 500,
-          "event_count": 716,
-          "event_mentions": 552,
-          "horizon": 330,
-          "hour": 543,
-          "precip_3h_mm": 154,
-          "precip_mm": 112,
-          "temp_c": 656,
-          "vis_km": 191,
-          "wind_ms": 579,
-          "zone_id": 620
+          "avg_goldstein": 321,
+          "avg_tone": 377,
+          "dow": 821,
+          "event_count": 607,
+          "event_mentions": 389,
+          "horizon": 577,
+          "hour": 764,
+          "precip_3h_mm": 117,
+          "precip_mm": 134,
+          "temp_c": 644,
+          "vis_km": 158,
+          "wind_ms": 323,
+          "zone_id": 720
         },
         "top10": [
           "zone_id",
           "hour",
+          "dow",
           "wind_ms",
+          "horizon",
+          "temp_c",
           "event_count",
           "vis_km",
-          "temp_c",
           "event_mentions",
+          "avg_tone"
+        ]
+      },
+      "metrics": {
+        "by_horizon": {
+          "1": {
+            "mae": 559.9385034746294,
+            "n": 3312,
+            "rmse": 854.398648741818
+          },
+          "2": {
+            "mae": 539.808936701121,
+            "n": 3312,
+            "rmse": 848.6034949453345
+          },
+          "3": {
+            "mae": 557.4100747998489,
+            "n": 3312,
+            "rmse": 855.4807438415277
+          }
+        },
+        "mae": 552.3858383251998,
+        "rmse": 852.8329742079111
+      },
+      "name": "mean",
+      "objective": "regression"
+    },
+    "p10": {
+      "alpha": 0.1,
+      "best_iter": 137,
+      "importance": {
+        "gain": {
+          "avg_goldstein": 2302.5154,
+          "avg_tone": 2736.5825,
+          "dow": 7662.09,
+          "event_count": 3317.9328,
+          "event_mentions": 2462.6826,
+          "horizon": 2898.3571,
+          "hour": 10366.2804,
+          "precip_3h_mm": 494.3598,
+          "precip_mm": 845.121,
+          "temp_c": 4161.7766,
+          "vis_km": 1383.2122,
+          "wind_ms": 2383.7862,
+          "zone_id": 32259.933
+        },
+        "split": {
+          "avg_goldstein": 698,
+          "avg_tone": 819,
+          "dow": 861,
+          "event_count": 834,
+          "event_mentions": 689,
+          "horizon": 437,
+          "hour": 687,
+          "precip_3h_mm": 166,
+          "precip_mm": 232,
+          "temp_c": 1012,
+          "vis_km": 324,
+          "wind_ms": 597,
+          "zone_id": 1138
+        },
+        "top10": [
+          "zone_id",
+          "hour",
+          "dow",
+          "temp_c",
+          "event_count",
           "horizon",
+          "avg_tone",
+          "event_mentions",
+          "wind_ms",
+          "avg_goldstein"
+        ]
+      },
+      "metrics": {
+        "by_horizon": {
+          "1": {
+            "mae": 1105.76711242417,
+            "n": 3312,
+            "rmse": 1578.471148687034
+          },
+          "2": {
+            "mae": 1168.975728599729,
+            "n": 3312,
+            "rmse": 1790.0278563514205
+          },
+          "3": {
+            "mae": 1141.6414196947148,
+            "n": 3312,
+            "rmse": 1818.450337548002
+          }
+        },
+        "coverage": 0.08796296296296297,
+        "mae": 1138.7947535728713,
+        "pinball": 144.93174957528473,
+        "rmse": 1732.2944826520181
+      },
+      "name": "p10",
+      "objective": "quantile"
+    },
+    "p50": {
+      "alpha": 0.5,
+      "best_iter": 120,
+      "importance": {
+        "gain": {
+          "avg_goldstein": 4631.4502,
+          "avg_tone": 5387.8106,
+          "dow": 25576.9799,
+          "event_count": 8689.0685,
+          "event_mentions": 5664.9667,
+          "horizon": 17229.7151,
+          "hour": 30581.6863,
+          "precip_3h_mm": 1698.038,
+          "precip_mm": 1251.9866,
+          "temp_c": 9125.4021,
+          "vis_km": 2419.3493,
+          "wind_ms": 8630.1066,
+          "zone_id": 177816.0048
+        },
+        "split": {
+          "avg_goldstein": 489,
+          "avg_tone": 522,
+          "dow": 1006,
+          "event_count": 665,
+          "event_mentions": 486,
+          "horizon": 656,
+          "hour": 987,
+          "precip_3h_mm": 167,
+          "precip_mm": 146,
+          "temp_c": 718,
+          "vis_km": 199,
+          "wind_ms": 435,
+          "zone_id": 964
+        },
+        "top10": [
+          "zone_id",
+          "hour",
+          "dow",
+          "horizon",
+          "temp_c",
+          "event_count",
+          "wind_ms",
+          "event_mentions",
           "avg_tone",
           "avg_goldstein"
         ]
@@ -102,236 +249,98 @@
       "metrics": {
         "by_horizon": {
           "1": {
-            "mae": 762.8810983360058,
+            "mae": 537.1646478793975,
             "n": 3312,
-            "rmse": 1084.7217259136346
+            "rmse": 850.1524364029212
           },
           "2": {
-            "mae": 690.4474929477568,
+            "mae": 530.476452167025,
             "n": 3312,
-            "rmse": 1011.0266168664673
+            "rmse": 843.0214073425037
           },
           "3": {
-            "mae": 679.6230218587716,
+            "mae": 551.4737483073413,
             "n": 3312,
-            "rmse": 1013.4247734784112
+            "rmse": 860.9254091925088
           }
         },
-        "mae": 710.9838710475115,
-        "rmse": 1036.954806823209
-      },
-      "name": "mean",
-      "objective": "regression"
-    },
-    "p10": {
-      "alpha": 0.1,
-      "best_iter": 134,
-      "importance": {
-        "gain": {
-          "avg_goldstein": 3318.727,
-          "avg_tone": 3098.3665,
-          "event_count": 3943.6109,
-          "event_mentions": 3371.4522,
-          "horizon": 1855.9145,
-          "hour": 7181.2757,
-          "precip_3h_mm": 655.9288,
-          "precip_mm": 842.0462,
-          "temp_c": 3361.3048,
-          "vis_km": 1947.4852,
-          "wind_ms": 3532.9643,
-          "zone_id": 27783.9105
-        },
-        "split": {
-          "avg_goldstein": 993,
-          "avg_tone": 964,
-          "event_count": 988,
-          "event_mentions": 922,
-          "horizon": 373,
-          "hour": 553,
-          "precip_3h_mm": 209,
-          "precip_mm": 208,
-          "temp_c": 910,
-          "vis_km": 327,
-          "wind_ms": 713,
-          "zone_id": 1148
-        },
-        "top10": [
-          "zone_id",
-          "hour",
-          "event_count",
-          "wind_ms",
-          "event_mentions",
-          "temp_c",
-          "avg_goldstein",
-          "avg_tone",
-          "vis_km",
-          "horizon"
-        ]
-      },
-      "metrics": {
-        "by_horizon": {
-          "1": {
-            "mae": 1288.7616071227003,
-            "n": 3312,
-            "rmse": 1807.213358849921
-          },
-          "2": {
-            "mae": 1283.904770054409,
-            "n": 3312,
-            "rmse": 1867.3023872082185
-          },
-          "3": {
-            "mae": 1203.7329802461213,
-            "n": 3312,
-            "rmse": 1819.9112545752246
-          }
-        },
-        "coverage": 0.09158615136876007,
-        "mae": 1258.7997858077433,
-        "pinball": 152.32058889195784,
-        "rmse": 1831.6582017586045
-      },
-      "name": "p10",
-      "objective": "quantile"
-    },
-    "p50": {
-      "alpha": 0.5,
-      "best_iter": 90,
-      "importance": {
-        "gain": {
-          "avg_goldstein": 3673.3043,
-          "avg_tone": 4999.6399,
-          "event_count": 8428.9752,
-          "event_mentions": 6310.543,
-          "horizon": 6004.0373,
-          "hour": 17912.6603,
-          "precip_3h_mm": 1125.3673,
-          "precip_mm": 944.8621,
-          "temp_c": 6514.2739,
-          "vis_km": 1970.8015,
-          "wind_ms": 16568.9025,
-          "zone_id": 152002.1189
-        },
-        "split": {
-          "avg_goldstein": 453,
-          "avg_tone": 566,
-          "event_count": 725,
-          "event_mentions": 594,
-          "horizon": 367,
-          "hour": 556,
-          "precip_3h_mm": 140,
-          "precip_mm": 120,
-          "temp_c": 535,
-          "vis_km": 175,
-          "wind_ms": 554,
-          "zone_id": 795
-        },
-        "top10": [
-          "zone_id",
-          "hour",
-          "wind_ms",
-          "event_count",
-          "temp_c",
-          "event_mentions",
-          "horizon",
-          "avg_tone",
-          "avg_goldstein",
-          "vis_km"
-        ]
-      },
-      "metrics": {
-        "by_horizon": {
-          "1": {
-            "mae": 737.9564479325966,
-            "n": 3312,
-            "rmse": 1098.166976144883
-          },
-          "2": {
-            "mae": 693.2768636073694,
-            "n": 3312,
-            "rmse": 1046.2372328682188
-          },
-          "3": {
-            "mae": 694.5909319001181,
-            "n": 3312,
-            "rmse": 1068.3424364667226
-          }
-        },
-        "coverage": 0.39794685990338163,
-        "mae": 708.6080811466948,
-        "pinball": 354.3040405733474,
-        "rmse": 1071.1269169260627
+        "coverage": 0.40307971014492755,
+        "mae": 539.7049494512546,
+        "pinball": 269.8524747256273,
+        "rmse": 851.3982261654154
       },
       "name": "p50",
       "objective": "quantile"
     },
     "p90": {
       "alpha": 0.9,
-      "best_iter": 172,
+      "best_iter": 476,
       "importance": {
         "gain": {
-          "avg_goldstein": 2406.4803,
-          "avg_tone": 2276.194,
-          "event_count": 3758.4733,
-          "event_mentions": 2627.9004,
-          "horizon": 2065.2593,
-          "hour": 6071.986,
-          "precip_3h_mm": 907.0447,
-          "precip_mm": 759.4817,
-          "temp_c": 3428.8463,
-          "vis_km": 1241.1503,
-          "wind_ms": 5884.0909,
-          "zone_id": 39958.3783
+          "avg_goldstein": 4062.0417,
+          "avg_tone": 4265.2005,
+          "dow": 5645.2627,
+          "event_count": 4803.2594,
+          "event_mentions": 3903.682,
+          "horizon": 3946.6074,
+          "hour": 9033.5932,
+          "precip_3h_mm": 1568.2878,
+          "precip_mm": 1547.2418,
+          "temp_c": 6589.8621,
+          "vis_km": 1907.3714,
+          "wind_ms": 5413.9953,
+          "zone_id": 47649.5048
         },
         "split": {
-          "avg_goldstein": 1126,
-          "avg_tone": 1027,
-          "event_count": 1362,
-          "event_mentions": 1034,
-          "horizon": 519,
-          "hour": 709,
-          "precip_3h_mm": 420,
-          "precip_mm": 336,
-          "temp_c": 1360,
-          "vis_km": 379,
-          "wind_ms": 1226,
-          "zone_id": 1166
+          "avg_goldstein": 2873,
+          "avg_tone": 3026,
+          "dow": 1785,
+          "event_count": 2762,
+          "event_mentions": 2481,
+          "horizon": 1205,
+          "hour": 1559,
+          "precip_3h_mm": 1187,
+          "precip_mm": 1137,
+          "temp_c": 4009,
+          "vis_km": 1353,
+          "wind_ms": 3123,
+          "zone_id": 3012
         },
         "top10": [
           "zone_id",
           "hour",
+          "temp_c",
+          "dow",
           "wind_ms",
           "event_count",
-          "temp_c",
-          "event_mentions",
-          "avg_goldstein",
           "avg_tone",
+          "avg_goldstein",
           "horizon",
-          "vis_km"
+          "event_mentions"
         ]
       },
       "metrics": {
         "by_horizon": {
           "1": {
-            "mae": 1067.8653965641565,
+            "mae": 652.5590584164808,
             "n": 3312,
-            "rmse": 1524.402271256663
+            "rmse": 1048.2185915877533
           },
           "2": {
-            "mae": 971.016371630116,
+            "mae": 634.0896343535765,
             "n": 3312,
-            "rmse": 1355.1546387706544
+            "rmse": 1010.3272576006216
           },
           "3": {
-            "mae": 938.5892869797323,
+            "mae": 597.7183350764794,
             "n": 3312,
-            "rmse": 1281.5357685845133
+            "rmse": 945.3032422060635
           }
         },
-        "coverage": 0.8253824476650563,
-        "mae": 992.4903517246682,
-        "pinball": 167.56250741547933,
-        "rmse": 1390.752830395058
+        "coverage": 0.7367149758454107,
+        "mae": 628.1223426155123,
+        "pinball": 145.42418579865762,
+        "rmse": 1002.1845476967306
       },
       "name": "p90",
       "objective": "quantile"
