@@ -3,7 +3,7 @@ import { Map as MapLibreMap, NavigationControl, type StyleSpecification } from '
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapboxOverlay } from '@deck.gl/mapbox'
 import { LightingEffect, AmbientLight, DirectionalLight, type Layer } from '@deck.gl/core'
-import { GeoJsonLayer, LineLayer, PolygonLayer, ScatterplotLayer } from '@deck.gl/layers'
+import { GeoJsonLayer, IconLayer, LineLayer, PolygonLayer, ScatterplotLayer } from '@deck.gl/layers'
 import { ScenegraphLayer } from '@deck.gl/mesh-layers'
 import { RatRouter, type RoadPoint } from '../lib/ratRouter'
 import { polygonCentroid, type TaxiZone } from '../lib/zones'
@@ -227,6 +227,25 @@ interface FleetPosition extends RoadPoint {
   heading: number
 }
 
+interface EventBubble {
+  position: [number, number, number]
+  icon: string
+  size: number
+  score: number
+}
+
+const eventFaceIcon = (tone: number): string => {
+  const face = tone >= 4
+    ? '<circle cx="61" cy="67" r="5"/><circle cx="99" cy="67" r="5"/><path d="M55 91 Q80 116 105 91" fill="none" stroke="#23272f" stroke-width="6" stroke-linecap="round"/>'
+    : tone >= -2
+      ? '<circle cx="61" cy="70" r="5"/><circle cx="99" cy="70" r="5"/><path d="M58 94 L102 94" fill="none" stroke="#23272f" stroke-width="6" stroke-linecap="round"/>'
+      : tone >= -8
+        ? '<circle cx="61" cy="70" r="5"/><circle cx="99" cy="70" r="5"/><path d="M55 103 Q80 78 105 103" fill="none" stroke="#23272f" stroke-width="6" stroke-linecap="round"/>'
+        : '<circle cx="61" cy="70" r="5"/><circle cx="99" cy="70" r="5"/><path d="M55 103 Q80 78 105 103" fill="none" stroke="#23272f" stroke-width="6" stroke-linecap="round"/><path d="M102 73 Q113 83 105 96 Q96 83 102 73" fill="#62b9ed" stroke="#23272f" stroke-width="3"/>'
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="180" viewBox="0 0 160 180"><path d="M80 174 C80 174 81 157 61 147" fill="none" stroke="#23272f" stroke-width="5" stroke-linecap="round"/><circle cx="80" cy="80" r="62" fill="#fff8e1" stroke="#23272f" stroke-width="5"/>${face}</svg>`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
 function geometryPoints(geometry: GeoJSON.Geometry): Array<[number, number]> {
   const cached = GEOMETRY_POINTS_CACHE.get(geometry as object)
   if (cached) return cached
@@ -307,6 +326,7 @@ function pointInRegion(geometry: GeoJSON.Geometry | undefined, seed: number): [n
 
 export interface NycMapProps {
   allocationByZone?: Record<string, number>
+  events?: Record<string, number>
   selectedZone?: string | null
   onZoneSelect?: (zoneId: string) => void
   dispatchRun?: DispatchRun | null
@@ -314,6 +334,7 @@ export interface NycMapProps {
 
 export default function NycMap({
   allocationByZone = {},
+  events = {},
   selectedZone = null,
   onZoneSelect,
   dispatchRun = null,
@@ -339,6 +360,7 @@ export default function NycMap({
   const poseRef = useRef<RatPose>({ lon: -73.985, lat: 40.755, heading: 0 })
   const footstepsRef = useRef<Array<{ lon: number; lat: number; born: number }>>([])
   const allocationRef = useRef(allocationByZone)
+  const eventsRef = useRef(events)
   const selectedZoneRef = useRef(selectedZone)
   const onZoneSelectRef = useRef(onZoneSelect)
   const dispatchRunRef = useRef(dispatchRun)
@@ -351,10 +373,11 @@ export default function NycMap({
 
   useEffect(() => {
     allocationRef.current = allocationByZone
+    eventsRef.current = events
     selectedZoneRef.current = selectedZone
     onZoneSelectRef.current = onZoneSelect
     dispatchRunRef.current = dispatchRun
-  }, [allocationByZone, dispatchRun, onZoneSelect, selectedZone])
+  }, [allocationByZone, dispatchRun, events, onZoneSelect, selectedZone])
 
   useEffect(() => {
     const container = containerRef.current
@@ -611,6 +634,71 @@ export default function NycMap({
         _lighting: 'pbr',
         getColor: () => [244, 192, 22, 255],
       })
+    }
+
+    const makeEventLayers = (): Layer[] => {
+      const signals = eventsRef.current
+      const firstNumber = (keys: string[]) => {
+        for (const key of keys) {
+          const value = signals[key]
+          if (Number.isFinite(value)) return value
+        }
+        return 0
+      }
+      const candidates: Array<{ zone: string; position: [number, number]; score: number; tone: number }> = []
+      for (const [zone, centroid] of Object.entries(regionCentroidsRef.current)) {
+        const count = firstNumber([
+          `zone_event_count:${zone}`,
+          `event_count:${zone}`,
+        ])
+        const mentions = firstNumber([
+          `zone_event_mentions:${zone}`,
+          `event_mentions:${zone}`,
+        ])
+        const intensity = firstNumber([zone])
+        const score = Math.max(count, mentions / 1000, intensity)
+        if (score <= 0) continue
+        candidates.push({
+          zone,
+          position: [centroid.lon, centroid.lat],
+          score,
+          tone: firstNumber([
+            `zone_avg_tone:${zone}`,
+            `avg_tone:${zone}`,
+          ]),
+        })
+      }
+      if (!candidates.length) return []
+
+      const maxScore = Math.max(...candidates.map((event) => Math.log1p(event.score)))
+      const bubbles: EventBubble[] = candidates.map((event) => {
+        const relative = Math.log1p(event.score) / maxScore
+        return {
+          position: [event.position[0], event.position[1], 450],
+          icon: eventFaceIcon(event.tone),
+          size: 260 + relative * 220,
+          score: event.score,
+        }
+      })
+
+      return [
+        new IconLayer<EventBubble>({
+          id: 'gdelt-event-bubbles',
+          data: bubbles,
+          getPosition: (event) => event.position,
+          getIcon: (event) => ({
+            url: event.icon,
+            width: 160,
+            height: 180,
+            anchorY: 180,
+          }),
+          getSize: (event) => event.size,
+          sizeUnits: 'meters',
+          sizeScale: 1,
+          billboard: true,
+          pickable: false,
+        }),
+      ]
     }
 
     const makeFootstepsLayer = (): ScatterplotLayer => {
@@ -1041,6 +1129,7 @@ switch (ev.event) {
             getLineWidth: [selectedZoneRef.current, weatherPulseTick],
           },
         }),
+        ...makeEventLayers(),
         ...makeWeatherFX(),
       ].filter(Boolean)
     }

@@ -105,13 +105,18 @@ def _game_state() -> Dict[str, object]:
         )
 
     if data_source.startswith("tlc-"):
-        regional = get_point_in_time_signals().weather_by_zone_at(SESSION.timestamp)
+        signals = get_point_in_time_signals()
+        regional = signals.weather_by_zone_at(SESSION.timestamp)
         for zone_id, weather in regional.items():
             if zone_id in zones:
                 zones[zone_id]["weather"] = {
                     **zones[zone_id].get("weather", {}),
                     **weather,
                 }
+        state["events"] = {
+            **state.get("events", {}),
+            **signals.events_at(SESSION.timestamp),
+        }
 
     state["weekday_label"] = SESSION.timestamp.strftime("%A").upper()
     return state

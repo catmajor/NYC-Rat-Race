@@ -598,7 +598,7 @@ export default function App() {
               <div><span className="eyebrow">NEW YORK CITY</span><h2>Taxi dispatch operations</h2></div>
               <div className="map-status"><span className="live-dot" /> SIMULATED SCENARIO <small>· {gameState.data_source}</small></div>
             </div>
-             <NycMap allocationByZone={allocation} selectedZone={selectedZone} dispatchRun={dispatchRun} onZoneSelect={(zoneId) => { if ((ZONE_IDS as readonly string[]).includes(zoneId)) setSelectedZone(zoneId as ZoneId) }} />
+             <NycMap allocationByZone={allocation} events={gameState.events} selectedZone={selectedZone} dispatchRun={dispatchRun} onZoneSelect={(zoneId) => { if ((ZONE_IDS as readonly string[]).includes(zoneId)) setSelectedZone(zoneId as ZoneId) }} />
             <div className="map-chrome map-chrome-bottom">
                <div className="map-key"><span className="key-swatch demand" /> Weekday average <span className="key-swatch fleet" /> Your fleet</div>
               <div className="map-coords">40° 44′ N&nbsp;&nbsp; 73° 59′ W</div>
