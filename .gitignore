@@ -5,6 +5,5 @@ __pycache__/
 ml/models/feature_columns.json
 ml/models/zone_codes.json
 ml/models/game_zones.json
-
 .vercel
 .env*
