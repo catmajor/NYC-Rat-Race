@@ -1,0 +1,181 @@
+{
+  "default": {
+    "event": "clear",
+    "label": "Clear",
+    "emoji": "☀️",
+    "ml_delta": { "temp_c": 0, "wind_ms": 0, "vis_km": 0, "precip_mm": 0, "precip_3h_mm": 0 }
+  },
+  "regions": {
+    "harlem": {
+      "current": "shower",
+      "wind": { "dir_deg": 70, "speed_ms": 3 },
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "upper_west": {
+      "current": "clear",
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "upper_east": {
+      "current": "clear",
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "midtown": {
+      "current": "cold",
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "downtown": {
+      "current": "clear",
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "north_brooklyn": {
+      "current": "clear",
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "south_brooklyn": {
+      "current": "clear",
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "queens_west": {
+      "current": "cloudy",
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "queens_east": {
+      "current": "thunderstorm",
+      "wind": { "dir_deg": 100, "speed_ms": 9 },
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "airports": {
+      "current": "fog",
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "bronx": {
+      "current": "windy",
+      "wind": { "dir_deg": 90, "speed_ms": 8 },
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    },
+    "staten_island": {
+      "current": "heatwave",
+      "possible": [
+        { "event": "cloudy", "label": "Cloudy", "emoji": "☁️", "ml_delta": { "temp_c": 0, "wind_ms": 2, "vis_km": -3, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [168, 178, 193, 40] },
+        { "event": "shower", "label": "Rain shower", "emoji": "🌦️", "ml_delta": { "temp_c": -2, "wind_ms": 3, "vis_km": -4, "precip_mm": 4, "precip_3h_mm": 9 }, "tint": [120, 130, 150, 45], "wind": { "dir_deg": 70, "speed_ms": 3 } },
+        { "event": "rain", "label": "Rain", "emoji": "🌧️", "ml_delta": { "temp_c": -3, "wind_ms": 4, "vis_km": -6, "precip_mm": 8, "precip_3h_mm": 18 }, "tint": [92, 100, 120, 60], "wind": { "dir_deg": 80, "speed_ms": 4 } },
+        { "event": "heavy_rain", "label": "Heavy rain", "emoji": "⛈️", "ml_delta": { "temp_c": -4, "wind_ms": 6, "vis_km": -9, "precip_mm": 16, "precip_3h_mm": 35 }, "tint": [58, 62, 76, 75], "wind": { "dir_deg": 85, "speed_ms": 6 } },
+        { "event": "thunderstorm", "label": "Thunderstorm", "emoji": "⛈️", "ml_delta": { "temp_c": -5, "wind_ms": 9, "vis_km": -7, "precip_mm": 18, "precip_3h_mm": 30 }, "tint": [36, 40, 54, 80], "wind": { "dir_deg": 100, "speed_ms": 9 } },
+        { "event": "fog", "label": "Fog", "emoji": "🌫️", "ml_delta": { "temp_c": -1, "wind_ms": 0, "vis_km": -10, "precip_mm": 0, "precip_3h_mm": 1 }, "tint": [190, 194, 202, 55] },
+        { "event": "heatwave", "label": "Heat wave", "emoji": "🌡️", "ml_delta": { "temp_c": 7, "wind_ms": 1, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [255, 120, 30, 45] },
+        { "event": "windy", "label": "Windy", "emoji": "🌬️", "ml_delta": { "temp_c": -1, "wind_ms": 8, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [170, 180, 196, 35], "wind": { "dir_deg": 90, "speed_ms": 8 } },
+        { "event": "cold", "label": "Cold snap", "emoji": "❄️", "ml_delta": { "temp_c": -10, "wind_ms": 4, "vis_km": -1, "precip_mm": 0, "precip_3h_mm": 0 }, "tint": [150, 196, 232, 70] }
+      ]
+    }
+  }
+}

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Map as MapLibreMap, NavigationControl, type StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapboxOverlay } from '@deck.gl/mapbox'
-import { LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core'
-import { GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers'
+import { LightingEffect, AmbientLight, DirectionalLight, type Layer } from '@deck.gl/core'
+import { GeoJsonLayer, LineLayer, PolygonLayer, ScatterplotLayer } from '@deck.gl/layers'
 import { ScenegraphLayer } from '@deck.gl/mesh-layers'
 import { RatRouter } from '../lib/ratRouter'
 import { polygonCentroid, type TaxiZone } from '../lib/zones'
@@ -53,6 +53,156 @@ const REGIONS_URL = '/data/regions.geojson'
 // tagged with the custom region (harlem/upper_west/.../airports) they fall in.
 // Attribution required per ODbL: shown in map credits.
 const BUILDINGS_URL = '/data/buildings.geojson'
+// Per-region weather/event instructions (see weather-graphics-handoff.md §4).
+// The game will later emit this instruction object and the map just re-renders;
+// the frontend never hardcodes event→region.
+const WEATHER_URL = '/data/weather_events.json'
+
+interface WeatherEvent {
+  event: string
+  label: string
+  emoji: string
+  ml_delta: Record<string, number>
+  tint?: [number, number, number, number]
+  // Area wind for an event: direction the wind blows TOWARD (compass degrees,
+  // 90 = east) and strength in m/s. Drives wind chevron orientation/march and
+  // rain slant/drift. Omitted = calm (rain falls straight) / east at 8 m/s.
+  wind?: { dir_deg: number; speed_ms: number }
+}
+
+interface WeatherConfig {
+  default: WeatherEvent
+  // Per-region config. `wind` is the area's prevailing wind (blows TOWARD
+  // dir_deg, in m/s). Weather FX prefer the region wind so rain/wind graphics
+  // line up even when the active event changes (e.g. rain under a windy area).
+  regions: Record<string, { current: string; possible: WeatherEvent[]; wind?: { dir_deg: number; speed_ms: number } }>
+}
+
+// Current event for a region, honoring the window.__weatherOverride demo knob
+// (mirrors __ratOverride). Non-determined regions resolve through the config's
+// per-region `current`, falling back to the default event. Returns null when
+// the active event is the default "clear" so nothing renders for it.
+function activeWeatherEvent(weather: WeatherConfig | null, slug: string): WeatherEvent | null {
+  if (!weather) return null
+  const override = (window as any).__weatherOverride as Record<string, string> | undefined
+  const currentId = override?.[slug] ?? weather.regions?.[slug]?.current ?? weather.default.event
+  if (currentId === weather.default.event) return null
+  const block = weather.regions?.[slug]
+  const found = block?.possible.find((p) => p.event === currentId)
+  if (!found) {
+    console.warn(`[weather] region "${slug}" current "${currentId}" not in possible set`)
+    return null
+  }
+  return found
+}
+
+// Multiply a base rgb region color by an event tint (rgba). Returns the base
+// color when no tint is set so the weather reads as a subtle region-wide wash.
+function tintColor(base: [number, number, number], event: WeatherEvent | null) {
+  const t = event?.tint
+  if (!t) return base
+  return [
+    Math.round(base[0] * Math.min(t[0] / 255, 1)),
+    Math.round(base[1] * Math.min(t[1] / 255, 1)),
+    Math.round(base[2] * Math.min(t[2] / 255, 1)),
+  ]
+}
+
+// Per-region weather renders as layered atmospheric effects, never text/emoji:
+//   cloudy       - fluffy cloud polygons drifting high in the atmosphere
+//   shower/rain  - cloud cover above + streaks of rain falling from it
+//   heavy_rain   - heavier rain streaks + strong region darkening (tint)
+//   thunderstorm - near-black clouds + rain + lightning flash in the sky
+//   fog          - wide translucent mist puffs hugging the ground
+//   heatwave     - pulsing hot-orange region outline (no floaters), red tint
+//   windy        - sparse high clouds drifting fast + elevated wind streaks
+//   cold         - pulsing icy-blue region outline (no floaters), blue tint
+// Everything is deterministic per region (a string hash seeds a PRNG), then
+// advanced by wall-clock time, so the ~8fps deck redeploys animate the effects
+// with stable, allocation-light patterns.
+const REGION_CELL_SCALE: Record<string, number> = {
+  harlem: 1,
+  upper_west: 1,
+  upper_east: 1,
+  midtown: 1,
+  downtown: 1,
+  north_brooklyn: 1.2,
+  south_brooklyn: 1.3,
+  queens_west: 1.5,
+  queens_east: 2.3,
+  airports: 2.1,
+  bronx: 1.5,
+  staten_island: 2.4,
+}
+
+function hashStr(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+// Record shapes feeding the two weather FX layers. Positions are
+// [lon, lat, elevation-meters]; ground effects use a small z (a few metres) so
+// they blend over the region polygons instead of depth-coplanar replacing them.
+// Clouds are fluffy polygon rings floating at altitude (no discs). h = the
+// extrusion thickness in metres that lifts the cloud ABOVE the map plane.
+interface CloudPoly {
+  ring: [number, number, number][]
+  color: [number, number, number, number]
+  h?: number
+}
+
+type WxPosition = [number, number] | [number, number, number]
+
+interface WxStreak {
+  source: WxPosition
+  target: WxPosition
+  color: [number, number, number, number]
+}
+
+// A cumulus-ish cloud silhouette: a closed ring of `N+1` vertices whose radius
+// swells toward each of `lobes` puffy bumps, with per-vertex jitter so the edge
+// is never a clean circle. "breathe" slowly scales the whole cloud up/down.
+function puffyRing(
+  cx: number,
+  cy: number,
+  R: number,
+  seed: number,
+  lobes: number,
+  z: number,
+  breathe = 1,
+  stretchX = 1.3,
+  stretchY = 0.8,
+): [number, number, number][] {
+  const ring: [number, number, number][] = []
+  const N = 30
+  for (let k = 0; k <= N; k++) {
+    const a = (k / N) * Math.PI * 2 + seed * 6.28
+    let rr = 1
+    for (let m = 0; m < lobes; m++) {
+      const la = seed * 6.28 + (m * Math.PI * 2) / lobes
+      const d = Math.abs(Math.atan2(Math.sin(a - la), Math.cos(a - la)))
+      rr += 0.45 * Math.pow(Math.max(0, Math.cos(d)), 1.2)
+    }
+    const jit = 0.95 + 0.1 * Math.sin(seed * 9 + k * 3.1)
+    const r = R * rr * (0.5 + 0.5 * breathe) * jit
+    ring.push([cx + Math.cos(a) * r * stretchX, cy + Math.sin(a) * r * stretchY, z])
+  }
+  return ring
+}
 
 const REGION_COLORS: Record<string, [number, number, number]> = {
   harlem: [78, 121, 167],
@@ -108,6 +258,9 @@ export default function NycMap({
   const zonesRef = useRef<TaxiZone[]>([])
   const regionCentroidsRef = useRef<Record<string, { lon: number; lat: number }>>({})
   const regionsLayerRef = useRef<GeoJsonLayer | null>(null)
+  // Per-region weather instructions; tint/badge accessors read it live so the
+  // layers refresh as soon as the (initially static) config loads.
+  const weatherRef = useRef<WeatherConfig | null>(null)
   // Building data is kept separate from the layer so the layer can be rebuilt
   // with a different `visible` flag on zoom-gate crossings. Rebuilding preserves
   // the same `data` reference, so deck reuses GPU buffers instead of unloading
@@ -213,7 +366,8 @@ export default function NycMap({
         elevationScale: heightScale,
         getFillColor: (f: { properties: { region: string } }) => {
           const c = REGION_COLORS[f.properties.region] ?? [170, 170, 170]
-          return [c[0], c[1], c[2], 200]
+          const tinted = tintColor(c, activeWeatherEvent(weatherRef.current, f.properties.region))
+          return [tinted[0], tinted[1], tinted[2], 200]
         },
         material: {
           // Near-flat look: high ambient keeps the color mostly solid, modest
@@ -236,6 +390,21 @@ export default function NycMap({
       }
       buildingsDataRef.current = doc.features
       console.log(`[buildings] loaded ${doc.features.length} features`)
+    }
+
+    const loadWeather = async () => {
+      try {
+        const res = await fetch(WEATHER_URL)
+        if (disposed) return
+        if (!res.ok) throw new Error(`weather ${res.status}`)
+        weatherRef.current = (await res.json()) as WeatherConfig
+        ;(window as any).__weatherConfig = weatherRef.current
+        console.log(
+          `[weather] loaded ${Object.keys(weatherRef.current.regions ?? {}).length} regions`,
+        )
+      } catch (err) {
+        console.error('[weather]', err)
+      }
     }
 
     let rafId = 0
@@ -311,18 +480,374 @@ export default function NycMap({
       })
     }
 
+    // Weather graphics: layered atmospheric effects assembled from a
+    // deterministic per-region seed and animated by wall-clock time. Clouds and
+    // fog are fluffy polygon rings (not discs) floated by their z coordinates;
+    // rain and wind streak along a line layer. Heat/cold render purely as a
+    // pulsing region outline in the regions layer below. One layer per family
+    // keeps deck buffer churn low while still updating ~8fps.
+    const makeWeatherFX = (): Layer[] => {
+      const weather = weatherRef.current
+      if (!weather || !regionCentroidsRef.current) return []
+      const t = performance.now() / 1000
+      const clouds: CloudPoly[] = []
+      const fog: CloudPoly[] = []
+      const streaks: WxStreak[] = []
+      const activeSlugs: string[] = []
+
+      for (const slug of Object.keys(regionCentroidsRef.current)) {
+        const ev = activeWeatherEvent(weather, slug)
+        if (!ev) continue
+        activeSlugs.push(slug)
+        const center = regionCentroidsRef.current[slug]
+        // Area wind: region-level prevailing wind wins, event wind is fallback.
+        const wind = weather.regions?.[slug]?.wind ?? ev.wind
+        const rand = mulberry32(hashStr(slug) || 1)
+        const scale = REGION_CELL_SCALE[slug] ?? 1
+        const lonHalf = 0.03 * scale
+        const latHalf = 0.02 * scale
+        // Polygon ring offsets are baked straight into lat/lon (degrees), so a
+        // metre-measured cloud radius must be converted per degree at this lat.
+        // Without this, a "900 m" cloud becomes a 900-degree blob covering the
+        // whole globe as one faint uniform wash.
+        const degPerM = 1 / (111320 * Math.max(0.7, Math.cos((center.lat * Math.PI) / 180)))
+
+        // A "cloud bank": `count` drifting cloud masses drawn as fluffy
+        // polygons (lumpy rings of lobes) floating high in the atmosphere via
+        // the ring's z coordinates — well above the streets so they never cover
+        // the city. The whole bank drifts at driftDegPerS (fast for wind, slow
+        // for overcast/rain) and gently breathes with a slow sin-wave. Returns
+        // the live centers so rain can fall from exactly under each cloud.
+        const addCloudBank = (opts: {
+          count: number
+          lobes: number
+          shade: [number, number, number]
+          alpha: number
+          altMin: number
+          altMax: number
+          radMin: number
+          radMax: number
+          driftDegPerS: number
+          latDrift: number
+        }): Array<{ lon: number; lat: number }> => {
+          const centers: Array<{ lon: number; lat: number }> = []
+          const period = (2 * lonHalf * 1.6) / opts.driftDegPerS
+          for (let i = 0; i < opts.count; i++) {
+            const r0 = rand()
+            const frac = ((t * opts.driftDegPerS + r0 * period) % period) / period
+            const baseLon = center.lon + (frac - 0.5) * 2 * lonHalf * 1.6
+            const baseLat = center.lat + (frac - 0.5) * opts.latDrift + (rand() - 0.5) * latHalf * 1.2
+            const mainR = (opts.radMin + rand() * (opts.radMax - opts.radMin)) * scale * degPerM
+            const seed = rand()
+            const breathe = 0.92 + 0.08 * Math.sin(t * 0.8 + seed * 6.28)
+            const z = opts.altMin + rand() * (opts.altMax - opts.altMin)
+            centers.push({ lon: baseLon, lat: baseLat })
+            clouds.push({
+              ring: puffyRing(baseLon, baseLat, mainR, seed, opts.lobes, z, breathe, 1.3, 0.78),
+              // ~55% fill: visible against the sky but the city stays readable.
+              color: [...opts.shade, Math.round(opts.alpha * 0.55)],
+              // Solid-ish thickness so the cloud reads as a volume in the sky.
+              h: 90 + rand() * 60,
+            })
+          }
+          return centers
+        }
+
+// Rain: short streaks that fall downward from just under the rendered cloud
+        // banks (each streak latches onto a cloud center, so it never rains in
+        // bare sky). The fall happens in elevation, not latitude: columns stay
+        // under their clouds while streaks descend toward the streets. Wind
+        // only shifts the lower endpoint downwind.
+        const addRain = (opts: {
+          count: number
+          len: number
+          speedDegPerS: number
+          top: number
+          color: [number, number, number, number]
+          under: Array<{ lon: number; lat: number }>
+        }) => {
+          const b = ((wind?.dir_deg ?? 90) * Math.PI) / 180
+          const dl = Math.sin(b) // east component (+lon)
+          const dn = Math.cos(b) // north component (+lat)
+          const windMs = wind?.speed_ms ?? 0
+          // Rain leans with the wind: the lower endpoint is displaced downwind
+          // by roughly wind speed / terminal fall speed over the visible shaft.
+          const visibleFall = 280
+          const blow = (windMs / 9) * visibleFall * degPerM
+          const fallCycle = Math.max(opts.top, 700)
+          const fallSpeed = Math.max(160, opts.speedDegPerS * 111320 * 0.35)
+          const pool = opts.under.length ? opts.under : [center]
+          const fallSpan = 0.01
+          for (let i = 0; i < opts.count; i++) {
+            const base = pool[Math.floor(rand() * pool.length)]
+            const lon = base.lon + (rand() - 0.5) * 0.006
+            const phase = rand() * fallCycle
+            const altitudePhase = (t * fallSpeed + phase) % fallCycle
+            const topZ = visibleFall + fallCycle - altitudePhase
+            const bottomZ = topZ - visibleFall
+            // The geographic spawn point stays under the cloud; falling is
+            // represented by the source/target elevation changing over time.
+            const top = base.lat + (rand() - 0.5) * fallSpan
+            const jitLon = (rand() - 0.5) * 0.001
+            const jitLat = (rand() - 0.5) * 0.001
+            const slantLon = dl * blow + jitLon
+            const slantLat = dn * blow + jitLat
+            streaks.push({
+              source: [lon, top, topZ],
+              target: [lon + slantLon, top + slantLat, bottomZ],
+              color: opts.color,
+            })
+          }
+        }
+
+        // Wind: chevron ">" brackets racing across the region high in the sky,
+        // oriented along the area's wind direction (the apex leads downwind, the
+        // two arms trail upwind) and marching faster the stronger the wind.
+        const addWindStreaks = () => {
+          const b = ((wind?.dir_deg ?? 90) * Math.PI) / 180
+          const dl = Math.sin(b) // east component (+lon)
+          const dn = Math.cos(b) // north component (+lat)
+          const perpL = -dn // left of the wind
+          const perpN = dl
+          const windMs = wind?.speed_ms ?? 8
+          // March speed scales with the wind; 8 m/s keeps the original tempo.
+          const march = 0.0022 * (windMs / 8)
+          const span = lonHalf * 2
+          for (let i = 0; i < 9; i++) {
+            const r = rand()
+            if (r < 0.3) continue
+            const along = (t * march + r * span) % span
+            const lateral = (rand() - 0.5) * latHalf * 1.2
+            const ax = center.lon + (along - span / 2) * dl + perpL * lateral
+            const ay = center.lat + (along - span / 2) * dn + perpN * lateral
+            const z = 1000 + rand() * 400
+            const arm = 0.005 + rand() * 0.003
+            const spread = 0.001 + rand() * 0.0008
+            const color: [number, number, number, number] = [210, 226, 240, 170]
+            streaks.push(
+              {
+                source: [ax - dl * arm + perpL * spread, ay - dn * arm + perpN * spread, z + 8],
+                target: [ax, ay, z],
+                color,
+              },
+              {
+                source: [ax - dl * arm - perpL * spread, ay - dn * arm - perpN * spread, z + 8],
+                target: [ax, ay, z],
+                color,
+              },
+            )
+          }
+        }
+
+        // Fog: a drifting band of wide, very translucent ground-level puffs so
+        // the mist hugs the streets instead of floating above them. Kept out
+        // of the `clouds` array so it stays on the flat ground plane.
+        const addFogPuffs = () => {
+          const span = lonHalf * 2
+          const period = span / 0.00006
+          for (let i = 0; i < 9; i++) {
+            const r0 = rand()
+            const frac = ((t * 0.00006 + r0 * period) % period) / period
+            const breathe = 0.75 + 0.25 * Math.sin(t * 0.6 + r0 * 6)
+            const seed = rand()
+            fog.push({
+              ring: puffyRing(
+                center.lon - lonHalf + frac * span,
+                center.lat + (rand() - 0.5) * latHalf * 1.2,
+                (600 + rand() * 800) * scale * degPerM,
+                seed,
+                4,
+                8 + rand() * 18,
+                breathe,
+                1.5,
+                0.9,
+              ),
+              color: [186, 193, 202, Math.round((38 + rand() * 26) * breathe)],
+            })
+          }
+        }
+
+        // Lightning: a bright jagged wash over the region twice per ~4.4s.
+        const flashLevel = (phase: number): number => {
+          const cycle = (t + phase * 4.4) % 4.4
+          const p1 = Math.max(0, 1 - Math.abs(cycle - 0.07) / 0.07)
+          const p2 = Math.max(0, 1 - Math.abs(cycle - 0.46) / 0.06) * 0.6
+          return Math.min(1, p1 + p2)
+        }
+
+switch (ev.event) {
+          case 'cloudy':
+            addCloudBank({
+              count: 5, lobes: 4, shade: [172, 182, 196], alpha: 185,
+              altMin: 1500, altMax: 2400, radMin: 450, radMax: 850,
+              driftDegPerS: 0.00008, latDrift: 0.004,
+            })
+            break
+          case 'shower':
+            addRain({
+              count: 22, len: 0.014, speedDegPerS: 0.012, top: 1300, color: [150, 185, 225, 150],
+              under: addCloudBank({
+                count: 3, lobes: 5, shade: [128, 138, 152], alpha: 205,
+                altMin: 1300, altMax: 2000, radMin: 420, radMax: 800,
+                driftDegPerS: 0.00012, latDrift: 0.006,
+              }),
+            })
+            break
+          case 'rain':
+            addRain({
+              count: 34, len: 0.017, speedDegPerS: 0.016, top: 1200, color: [120, 160, 210, 160],
+              under: addCloudBank({
+                count: 3, lobes: 5, shade: [108, 118, 134], alpha: 210,
+                altMin: 1200, altMax: 1900, radMin: 450, radMax: 800,
+                driftDegPerS: 0.00015, latDrift: 0.007,
+              }),
+            })
+            break
+          case 'heavy_rain':
+            addRain({
+              count: 48, len: 0.021, speedDegPerS: 0.02, top: 1100, color: [95, 135, 190, 180],
+              under: addCloudBank({
+                count: 4, lobes: 5, shade: [78, 88, 104], alpha: 215,
+                altMin: 1100, altMax: 1700, radMin: 500, radMax: 820,
+                driftDegPerS: 0.00018, latDrift: 0.008,
+              }),
+            })
+            break
+          case 'thunderstorm': {
+            addRain({
+              count: 44, len: 0.019, speedDegPerS: 0.018, top: 1000, color: [95, 125, 185, 170],
+              under: addCloudBank({
+                count: 4, lobes: 6, shade: [56, 66, 86], alpha: 220,
+                altMin: 1000, altMax: 1500, radMin: 520, radMax: 860,
+                driftDegPerS: 0.0002, latDrift: 0.01,
+              }),
+            })
+            const lvl = flashLevel((hashStr(slug) % 10) / 10)
+            if (lvl > 0.02) {
+              // Lightning: a modest bright prism high in the sky below the
+              // thunderhead, sized inside the region cell so it never floods
+              // its neighbours.
+              clouds.push({
+                ring: puffyRing(
+                  center.lon,
+                  center.lat,
+                  (lonHalf > latHalf ? lonHalf : latHalf) * 0.7,
+                  hashStr(slug) / 1e9,
+                  7,
+                  1250,
+                  1,
+                  1.4,
+                  1.05,
+                ),
+                color: [205, 215, 255, Math.round(lvl * 120)],
+                h: 70,
+              })
+            }
+            break
+          }
+          case 'fog':
+            addFogPuffs()
+            break
+          case 'heatwave':
+            // Glowing pulsing outline handled by the regions layer's getLineColor.
+            break
+          case 'windy':
+            addCloudBank({
+              count: 4, lobes: 4, shade: [205, 215, 228], alpha: 160,
+              altMin: 1700, altMax: 2600, radMin: 420, radMax: 780,
+              driftDegPerS: 0.001, latDrift: 0.016,
+            })
+            addWindStreaks()
+            break
+          case 'cold':
+            // Glowing pulsing outline handled by the regions layer's getLineColor.
+            break
+        }
+      }
+      ;(window as any).__weatherBadges = activeSlugs
+      ;(window as any).__weatherStats = {
+        slugs: activeSlugs,
+        clouds: clouds.length,
+        fog: fog.length,
+        streaks: streaks.length,
+      }
+
+      const fx: Layer[] = []
+      if (clouds.length) {
+        // Clouds & lightning: thin extruded prisms so altitude is real (deck
+        // drops non-extruded polygon z to 0, which made clouds lie on the map
+        // and block the city), matching how the 3D buildings read.
+        fx.push(
+          new PolygonLayer({
+            id: 'wx-clouds',
+            data: clouds,
+            getPolygon: (d) => d.ring,
+            getFillColor: (d) => d.color,
+            getElevation: (d) => d.h ?? 60,
+            stroked: true,
+            filled: true,
+            extruded: true,
+            wireframe: false,
+            lineWidthUnits: 'pixels',
+            lineWidthMinPixels: 2,
+            getLineWidth: 3,
+            getLineColor: (d: { color: [number, number, number, number] }) =>
+              d.color[3] > 60
+                ? [d.color[0], d.color[1], d.color[2], Math.min(255, d.color[3] + 28)] as [number, number, number, number]
+                : [0, 0, 0, 0] as [number, number, number, number],
+          }),
+        )
+      }
+      if (fog.length) {
+        // Ground fog stays flat on the streets (soft, no volume, no silhouette).
+        fx.push(
+          new PolygonLayer({
+            id: 'wx-fog',
+            data: fog,
+            getPolygon: (d) => d.ring,
+            getFillColor: (d) => d.color,
+            stroked: false,
+            filled: true,
+            extruded: false,
+          }),
+        )
+      }
+      if (streaks.length) {
+        fx.push(
+          new LineLayer({
+            id: 'wx-streaks',
+            data: streaks,
+            getSourcePosition: (d) => d.source,
+            getTargetPosition: (d) => d.target,
+            getWidth: 2.4,
+            widthUnits: 'pixels',
+            getColor: (d) => d.color,
+            // Rain/wind must never be depth-culled by buildings, region
+            // polygons or the map's own depth buffer — always draw on top.
+            parameters: { depthTest: false },
+          }),
+        )
+      }
+      return fx
+    }
+
     // Static layers: 3D building extrusion appears only when zoomed in, keeping
     // the city-wide roaming view cheap. Buildings always stay in the layer list
     // (just hidden), otherwise deck unloads them and they never return after
     // zooming back in.
     const baseLayers = (pose: RatPose) => {
       const showTiles = zoomRef.current >= 12
+      // Weather FX go AFTER buildings/regions: translucent geometry still
+      // writes depth and depth-culls anything painted behind it, so if the
+      // clouds render first they silently hide building extrusion and region
+      // outlines that fall underneath. Drawn last, they just blend on top.
       return [
         makeRatLayer(pose),
         makeFleetLayer(),
         makeFootstepsLayer(),
         makeBuildingsLayer(showTiles),
         regionsLayerRef.current,
+        ...makeWeatherFX(),
       ].filter(Boolean)
     }
 
@@ -359,6 +884,7 @@ export default function NycMap({
     const boot = async () => {
       try {
         loadBuildings().catch((err) => console.error('[buildings]', err))
+        loadWeather().catch((err) => console.error('[weather]', err))
         const zonesRes = await fetch(ZONES_URL)
         if (disposed) return
         if (!zonesRes.ok) throw new Error(`zones ${zonesRes.status}`)
@@ -397,16 +923,34 @@ export default function NycMap({
           wireframe: false,
           lineWidthUnits: 'pixels',
           lineWidthMinPixels: 1.5,
+          getLineWidth: (f: { properties: { name: string } }) => {
+            const e = activeWeatherEvent(weatherRef.current, f.properties.name)
+            return e?.event === 'heatwave' || e?.event === 'cold' ? 3.5 : 1.5
+          },
           getFillColor: (f: { properties: { name: string } }) => {
             const c = REGION_COLORS[f.properties.name] ?? [160, 160, 160]
             const selected = selectedZoneRef.current === f.properties.name
             const taxis = allocationRef.current[f.properties.name] ?? 0
-            return selected
-              ? [245, 194, 24, 150]
-              : [c[0], c[1], c[2], Math.min(125, 32 + taxis * 2)]
+            if (selected) return [245, 194, 24, 150]
+            const tinted = tintColor(c, activeWeatherEvent(weatherRef.current, f.properties.name))
+            return [tinted[0], tinted[1], tinted[2], Math.min(125, 32 + taxis * 2)]
           },
           getLineColor: (f: { properties: { name: string } }) => {
-            const c = REGION_COLORS[f.properties.name] ?? [200, 200, 200]
+            const name = f.properties.name
+            // Heat/cold flash the region outline itself (phase-offset per
+            // region so neighbours never breathe in lock-step) instead of a
+            // centroid glow disc.
+            const ev = activeWeatherEvent(weatherRef.current, name)
+            const phase = hashStr(name) / 4294967296
+            if (ev?.event === 'heatwave') {
+              const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 260 + phase * Math.PI * 2)
+              return [255, Math.round(110 + 100 * pulse), 30, 255]
+            }
+            if (ev?.event === 'cold') {
+              const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320 + phase * Math.PI * 2)
+              return [Math.round(100 + 120 * pulse), 195, 255, 255]
+            }
+            const c = REGION_COLORS[name] ?? [200, 200, 200]
             return [c[0], c[1], c[2], 220]
           },
           onHover: (info) => {
